@@ -34,6 +34,28 @@
     logRequests: false,             // true = اطبع في الكونسول السيرفر المستخدم لكل طلب API
   };
 
+  // ---------------------------------------------------------------------------
+  // 0.1 Session token (Bearer) — يحل مشكلة "تسجيل الدخول مرتين"
+  //
+  //   الفرونت (github.io) والسيرفرات (railway / suga.run) دومينات مختلفة، فالمتصفح
+  //   بيحجب كوكي الجلسة (SameSite / third-party cookies) أو الكوكي بتفضل مربوطة
+  //   بسيرفر واحد. الحل: نحفظ الـ token اللي السيرفر بيرجّعه في الـ body وهنبعته في
+  //   Authorization: Bearer مع كل طلب، وبالتالي يشتغل على أي سيرفر (JWT_SECRET واحد).
+  //   المفتاح مش مربوط بالسيرفر النشط عشان الـ failover ما يضيّعوش.
+  // ---------------------------------------------------------------------------
+  var TOKEN_KEY = 'maksib_token';
+
+  function getToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setToken(token) {
+    try {
+      if (token) localStorage.setItem(TOKEN_KEY, String(token));
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (e) { /* storage unavailable */ }
+  }
+  function clearToken() { setToken(''); }
+
   var ServerPool = (function () {
     var cfg = SERVER_CONFIG;
     var list = cfg.servers
@@ -309,6 +331,11 @@
     url = String(url || '');
     var headers = {};
     if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+
+    // Bearer fallback: يتبعت مع كل طلب لسيرفراتنا (مش للروابط الخارجية الكاملة)
+    var token = getToken();
+    if (token && !/^https?:\/\//i.test(url)) headers['Authorization'] = 'Bearer ' + token;
+
     var config = Object.assign({ credentials: 'include' }, options, {
       headers: Object.assign(headers, options.headers || {}),
     });
@@ -316,6 +343,18 @@
     try {
       var response = await fetchWithFailover(url, config);
       var data = await response.json().catch(function () { return {}; });
+
+      // سجّل/حدّث الـ token لو السيرفر رجّعه (login / register)
+      var issued = (data && typeof data.token === 'string' && data.token) ||
+                   (data && data.data && typeof data.data.token === 'string' && data.data.token) || '';
+      if (response.ok && issued && /\/api\/auth\//.test(url) && url.indexOf('/api/auth/me') === -1) {
+        setToken(issued);
+      }
+
+      // token منتهي/غير صالح -> امسحه عشان ما يتبعتش تاني
+      if (response.status === 401 && token && /\/api\/auth\/me/.test(url)) {
+        clearToken();
+      }
 
       if (!response.ok) {
         var msg = data.message || 'حدث خطأ في معالجة الطلب';
@@ -351,6 +390,7 @@
 
     async logout() {
       await fetchAPI('/api/auth/log_out', { method: 'POST' });
+      clearToken();
       this.currentUser = null;
       this._pending = null;
       showToast('تم تسجيل الخروج بنجاح', 'success');
@@ -751,7 +791,13 @@
         if (socket) { socket.removeAllListeners(); socket.close(); }
         socketBase = ServerPool.current();
         fails = 0;
-        socket = io(socketBase, { transports: ['websocket'], withCredentials: true, reconnectionDelayMax: 5000 });
+        socket = io(socketBase, {
+          transports: ['websocket'],
+          withCredentials: true,
+          reconnectionDelayMax: 5000,
+          // يتبعت الـ token كمان لو السيرفر عايز يعرّف المستخدم من الـ socket (ما بيأثرش لو مش مستخدم)
+          auth: function (cb) { cb({ token: getToken() }); },
+        });
 
         socket.on('connect', function () {
           fails = 0;
@@ -1001,6 +1047,9 @@
     cart: cart,
     shell: shell,
     init: init,
+    getToken: getToken,
+    setToken: setToken,
+    clearToken: clearToken,
   };
 
   Object.defineProperty(window.App, 'API_BASE_URL', { get: function () { return ServerPool.current(); } });
