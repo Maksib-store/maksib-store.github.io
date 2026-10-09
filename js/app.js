@@ -10,26 +10,35 @@
   'use strict';
 
   // ---------------------------------------------------------------------------
-  // 0. Server pool — تبديل تلقائي بين السيرفرات (Failover)
+  // 0. Server pool — فحص متوازي + اختيار الأسرع + تبديل تلقائي (Failover)
   //
-  //   • ضيف أي عدد من السيرفرات في SERVERS (الترتيب = الأولوية). بدون / في النهاية.
-  //   • كل سيرفر لازم يرد على GET /healthy (200 = سليم، 503 = واقع/مزدحم).
-  //   • الفرونت بيفضل على نفس السيرفر (عشان الكوكيز/تسجيل الدخول) وبيتحول للي بعده
-  //     لما السيرفر يقع أو يتأخر أو يرد 502/503/504 أو /healthy يقول إنه مزدحم.
+  //   • ضيف أي عدد من السيرفرات في SERVERS (بدون / في النهاية).
+  //   • كل سيرفر لازم يرد على GET /healthy (200 = سليم، 503 = واقع/مزدحم)
+  //     ولازم يسمح بـ CORS للـ endpoint ده (وإلا الفحص هيعتبره واقع).
+  //   • كل السيرفرات بتتفحص في نفس الوقت (مش واحد ورا التاني):
+  //       - أول زيارة: أول سيرفر سليم يرد = الأسرع، وبيتم اختياره فوراً.
+  //       - فحص دوري في الخلفية: بيحدّث زمن الاستجابة لكل سيرفر، ولو سيرفر تاني
+  //         أسرع بفارق واضح بيتم التحويل له (hysteresis عشان ما يحصلش تذبذب).
+  //       - طلبات GET: لو السيرفر الحالي اتأخر (hedgeAfterMs) بيتبعت نفس الطلب
+  //         للسيرفر اللي بعده بالتوازي وأول رد سليم يكسب (مفيش انتظار في الطابور).
+  //       - طلبات POST/PUT/DELETE: ما بتتكررش إلا على 502/503 عشان ما نكرّرش عملية.
   // ---------------------------------------------------------------------------
   var SERVER_CONFIG = {
     servers: [
       'https://maksib.up.railway.app',
-      'https://70qgl61o0ymm-production-qr391fha.europe-west1.suga.run', // ← حط رابط السيرفر التاني هنا (ضيف أكتر من سطر لو عندك أكتر)
+      'https://70qgl61o0ymm-production-qr391fha.europe-west1.suga.run', // ← ضيف أي سيرفر إضافي هنا
     ],
     healthPath: '/healthy',
     healthTimeoutMs: 3000,          // أقصى انتظار لفحص /healthy
-    requestTimeoutMs: 20000,        // أقصى انتظار لطلب GET قبل اعتبار السيرفر واقع
-    writeTimeoutMs: 60000,          // أقصى انتظار لطلبات POST/PUT/DELETE (بدون إعادة محاولة)
+    requestTimeoutMs: 20000,        // أقصى انتظار لكل محاولة GET
+    writeTimeoutMs: 60000,          // أقصى انتظار لطلبات POST/PUT/DELETE
+    hedgeAfterMs: 2500,             // لو GET ما رجعش في المدة دي → جرّب سيرفر تاني بالتوازي
     cooldownMs: 30000,              // السيرفر الواقع بيتتجاهل المدة دي قبل ما نجربه تاني
-    recheckIntervalMs: 30000,       // فحص دوري للسيرفر الحالي في الخلفية
-    stickyTtlMs: 15 * 60 * 1000,    // بعد المدة دي نرجع لترتيب الأولوية (يرجّعك للسيرفر الأساسي لو اتصلح)
-    distribute: 'priority',         // 'priority' = دايماً الأول أولاً · 'random' = توزيع الزوار الجدد عشوائي
+    recheckIntervalMs: 30000,       // فحص دوري متوازي لكل السيرفرات في الخلفية
+    stickyTtlMs: 15 * 60 * 1000,    // مدة تذكّر السيرفر المختار قبل إعادة السباق من الأول
+    strategy: 'fastest',            // 'fastest' الأسرع · 'priority' بترتيب القائمة · 'random' عشوائي بين السليمين
+    switchRatio: 0.6,               // (fastest) ما نبدّلش إلا لو الجديد أسرع بنسبة كبيرة (< 60% من زمن الحالي)
+    switchMinGainMs: 150,           // …وبفارق ملحوظ بالمللي ثانية
     storageKey: 'maksib_active_server',
     logRequests: false,             // true = اطبع في الكونسول السيرفر المستخدم لكل طلب API
   };
@@ -37,24 +46,59 @@
   // ---------------------------------------------------------------------------
   // 0.1 Session token (Bearer) — يحل مشكلة "تسجيل الدخول مرتين"
   //
-  //   الفرونت (github.io) والسيرفرات (railway / suga.run) دومينات مختلفة، فالمتصفح
-  //   بيحجب كوكي الجلسة (SameSite / third-party cookies) أو الكوكي بتفضل مربوطة
-  //   بسيرفر واحد. الحل: نحفظ الـ token اللي السيرفر بيرجّعه في الـ body وهنبعته في
-  //   Authorization: Bearer مع كل طلب، وبالتالي يشتغل على أي سيرفر (JWT_SECRET واحد).
-  //   المفتاح مش مربوط بالسيرفر النشط عشان الـ failover ما يضيّعوش.
+  //   الفرونت والسيرفرات دومينات مختلفة، فالمتصفح ممكن يحجب كوكي الجلسة. الحل: نحفظ
+  //   الـ token اللي السيرفر بيرجّعه ونبعته في Authorization: Bearer مع كل طلب.
+  //   نظافة الـ token:
+  //     - بيتمسح لو شكله مش JWT صالح أو لو منتهي (حسب exp) قبل ما يتبعت.
+  //     - بيتمسح عند 401 من أي طلب كان شايله (وبالأخص /api/auth/me).
+  //     - بيتمسح محلياً أولاً عند تسجيل الخروج (حتى لو الشبكة وقعت).
+  //     - تغييره في تاب تاني بيتزامن مع باقي التابات.
   // ---------------------------------------------------------------------------
   var TOKEN_KEY = 'maksib_token';
+  var MAX_TOKEN_LENGTH = 4096;          // نفس حد السيرفر (request_token.js)
+  var TOKEN_CLOCK_SKEW_MS = 30 * 1000;  // نعتبره منتهي قبل الميعاد بـ 30 ثانية
 
-  function getToken() {
-    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  function isWellFormedToken(token) {
+    return typeof token === 'string' && token.length > 0 && token.length <= MAX_TOKEN_LENGTH &&
+      /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(token);
   }
+
+  /** يقرأ exp من الـ JWT (بالمللي ثانية) من غير التحقق من التوقيع. null لو مش موجود. */
+  function tokenExpiryMs(token) {
+    try {
+      var part = String(token).split('.')[1];
+      if (!part) return null;
+      var b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var payload = JSON.parse(atob(b64));
+      return (payload && typeof payload.exp === 'number') ? payload.exp * 1000 : null;
+    } catch (e) { return null; }
+  }
+
+  function clearToken() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* storage unavailable */ }
+  }
+
   function setToken(token) {
     try {
-      if (token) localStorage.setItem(TOKEN_KEY, String(token));
-      else localStorage.removeItem(TOKEN_KEY);
+      if (!token) { localStorage.removeItem(TOKEN_KEY); return; }
+      if (!isWellFormedToken(token)) { console.warn('[auth] ignored malformed token'); return; }
+      localStorage.setItem(TOKEN_KEY, String(token));
     } catch (e) { /* storage unavailable */ }
   }
-  function clearToken() { setToken(''); }
+
+  /** بيرجّع token صالح أو ''. التوكن التالف/المنتهي بيتمسح تلقائياً. */
+  function getToken() {
+    var token = '';
+    try { token = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+    if (!token) return '';
+    var exp = tokenExpiryMs(token);
+    if (!isWellFormedToken(token) || (exp !== null && exp - TOKEN_CLOCK_SKEW_MS <= Date.now())) {
+      clearToken();
+      return '';
+    }
+    return token;
+  }
 
   var ServerPool = (function () {
     var cfg = SERVER_CONFIG;
@@ -64,12 +108,15 @@
       .filter(function (u, i, a) { return a.indexOf(u) === i; });
     if (!list.length) list = [String(cfg.servers[0]).replace(/\/+$/, '')];
 
-    var down = {};          // url -> timestamp لحد إمتى متجاهَل
+    var stats = {};       // url -> { ms (متوسط متحرك), ok, at }
+    var down = {};        // url -> timestamp لحد إمتى متجاهَل
     var active = null;
-    var verifying = false;
+    var evaluating = null;
+    var readyPromise = Promise.resolve();
 
     function now() { return Date.now(); }
     function isDown(u) { return (down[u] || 0) > now(); }
+    function clock() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : now(); }
 
     function load() {
       try {
@@ -82,8 +129,6 @@
       try { localStorage.setItem(cfg.storageKey, JSON.stringify({ url: u, t: now() })); } catch (e) { /* ignore */ }
     }
 
-    active = load() || (cfg.distribute === 'random' ? list[Math.floor(Math.random() * list.length)] : list[0]);
-
     function setActive(u, reason) {
       if (u === active) return;
       var from = active;
@@ -93,69 +138,167 @@
       try { window.dispatchEvent(new CustomEvent('market:server_changed', { detail: { from: from, to: u, reason: reason } })); } catch (e) { /* ignore */ }
     }
 
-    /** السيرفر اللي بعد `from` في الدائرة ومش واقع. null لو مفيش. */
-    function nextAfter(from) {
-      var i = list.indexOf(from);
-      for (var k = 1; k < list.length; k++) {
-        var cand = list[(i + k) % list.length];
-        if (!isDown(cand)) return cand;
-      }
-      return null;
-    }
-
-    /** فحص /healthy. بترجع true فقط لو الرد 200 و status === 'ok'. */
+    /** فحص /healthy واحد. بيرجّع { url, ok, ms } ولا بيرمي أبداً. */
     function probe(u) {
       var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
       var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, cfg.healthTimeoutMs) : null;
+      var t0 = clock();
       return fetch(u + cfg.healthPath, { cache: 'no-store', credentials: 'omit', signal: ctrl ? ctrl.signal : undefined })
         .then(function (r) { return r.ok ? r.json().catch(function () { return { status: 'ok' }; }) : null; })
         .then(function (d) { return !!d && (d.status === undefined || d.status === 'ok'); })
         .catch(function () { return false; })
-        .then(function (ok) { if (timer) clearTimeout(timer); return ok; });
+        .then(function (ok) {
+          if (timer) clearTimeout(timer);
+          return { url: u, ok: ok, ms: Math.max(1, Math.round(clock() - t0)) };
+        });
     }
 
-    /** سجّل إن السيرفر ده وقع، وحوّل للي بعده لو هو الحالي. */
+    /** يسجّل نتيجة فحص: متوسط متحرك لزمن الاستجابة + حالة الـ cooldown. */
+    function record(r) {
+      var s = stats[r.url] || (stats[r.url] = { ms: null, ok: null, at: 0 });
+      s.ok = r.ok;
+      s.at = now();
+      if (r.ok) {
+        s.ms = s.ms === null ? r.ms : Math.round(s.ms * 0.5 + r.ms * 0.5);
+        delete down[r.url];
+      } else {
+        down[r.url] = now() + cfg.cooldownMs;
+      }
+      return r;
+    }
+
+    /**
+     * يفحص كل السيرفرات في نفس الوقت.
+     *  first → أول نتيجة سليمة (= الأسرع) أو null لو كلهم واقعين.
+     *  all   → كل النتائج بعد ما يخلصوا (أقصى انتظار = healthTimeoutMs).
+     */
+    function raceProbes(urls) {
+      var all = urls.map(function (u) { return probe(u).then(record); });
+      var first = new Promise(function (resolve) {
+        var left = all.length;
+        if (!left) return resolve(null);
+        all.forEach(function (p) {
+          p.then(function (r) {
+            if (r.ok) resolve(r);
+            else if (--left === 0) resolve(null);
+          });
+        });
+      });
+      return { first: first, all: Promise.all(all) };
+    }
+
+    function byKnownLatency(a, b) {
+      if (cfg.strategy === 'priority') return list.indexOf(a) - list.indexOf(b);
+      var ma = stats[a] && stats[a].ms, mb = stats[b] && stats[b].ms;
+      if (ma == null && mb == null) return list.indexOf(a) - list.indexOf(b);
+      if (ma == null) return 1;
+      if (mb == null) return -1;
+      return ma - mb;
+    }
+
+    /** يختار من النتائج السليمة حسب الاستراتيجية. */
+    function pick(healthy) {
+      if (!healthy.length) return null;
+      if (cfg.strategy === 'random') return healthy[Math.floor(Math.random() * healthy.length)];
+      return healthy.slice().sort(function (a, b) { return byKnownLatency(a.url, b.url); })[0];
+    }
+
+    /** أفضل بديل معروف (مش واقع) غير `from`. null لو مفيش. */
+    function bestKnownAlternative(from) {
+      var c = list.filter(function (u) { return u !== from && !isDown(u); });
+      if (!c.length) return null;
+      c.sort(byKnownLatency);
+      return c[0];
+    }
+
+    /** ترتيب المحاولات: الحالي أولاً، ثم السليمين الأسرع، ثم الواقعين كآخر حل. */
+    function order() {
+      var others = list.filter(function (u) { return u !== active; });
+      return [active].concat(
+        others.filter(function (u) { return !isDown(u); }).sort(byKnownLatency),
+        others.filter(isDown)
+      );
+    }
+
+    /** سجّل إن السيرفر ده وقع، وحوّل فوراً لأفضل بديل معروف ثم تأكد منه بفحص متوازي. */
     function reportFailure(u, reason) {
       down[u] = now() + cfg.cooldownMs;
-      if (u === active) {
-        var nxt = nextAfter(u);
-        if (nxt) { setActive(nxt, reason || 'failure'); verifyActive(); }
-      }
+      if (u !== active) return;
+      var nxt = bestKnownAlternative(u);
+      if (nxt) { setActive(nxt, reason || 'failure'); evaluate(); }
     }
 
-    /** اتأكد إن السيرفر الحالي سليم فعلاً؛ لو لا كمّل للي بعده. */
-    function verifyActive() {
-      if (verifying) return Promise.resolve(active);
-      verifying = true;
-      var target = active;
-      return probe(target).then(function (ok) {
-        verifying = false;
-        if (active !== target) return active;
-        if (ok) { delete down[target]; return active; }
-        reportFailure(target, 'health-check');
+    function noteSuccess(u) { delete down[u]; }
+
+    /** فحص متوازي لكل السيرفرات، ثم تحويل لو لازم (الحالي واقع / فيه أسرع بفارق واضح). */
+    function evaluate() {
+      if (list.length < 2) return Promise.resolve(active);
+      if (evaluating) return evaluating;
+      var urls = list.filter(function (u) { return u === active || !isDown(u); });
+      evaluating = raceProbes(urls).all.then(function (results) {
+        evaluating = null;
+        var healthy = results.filter(function (r) { return r.ok; });
+        var best = pick(healthy);
+        if (!best) return active; // الكل واقع: ابقى مكانك وجرّب لاحقاً
+        var cur = results.filter(function (r) { return r.url === active; })[0];
+        if (!cur || !cur.ok) { setActive(best.url, 'health-check'); return active; }
+        if (best.url === active) return active;
+
+        var better = false;
+        if (cfg.strategy === 'priority') {
+          better = list.indexOf(best.url) < list.indexOf(active);
+        } else if (cfg.strategy === 'fastest') {
+          var sa = stats[active].ms, sb = stats[best.url].ms;
+          better = sb < sa * cfg.switchRatio && (sa - sb) >= cfg.switchMinGainMs;
+        }
+        if (better) setActive(best.url, cfg.strategy === 'priority' ? 'higher-priority' : 'faster');
         return active;
-      });
+      }, function () { evaluating = null; return active; });
+      return evaluating;
+    }
+
+    // ---- الاختيار الأولي ----
+    var sticky = load();
+    if (sticky) {
+      active = sticky;                                // نبدأ فوراً بدون انتظار، ونتأكد في الخلفية
+      if (list.length > 1) setTimeout(evaluate, 0);
+    } else {
+      active = list[0];
+      if (list.length > 1) {
+        var race = raceProbes(list);
+        var decided = cfg.strategy === 'fastest'
+          ? race.first                                // أول سيرفر سليم يرد = الأسرع
+          : race.all.then(function (rs) { return pick(rs.filter(function (r) { return r.ok; })); });
+        readyPromise = decided.then(function (r) {
+          if (r) { setActive(r.url, 'startup'); save(r.url); }
+        }).catch(function () { /* ابقى على الافتراضي */ });
+      }
     }
 
     // فحص دوري + عند رجوع التاب/الإنترنت
     if (list.length > 1) {
-      setInterval(function () { if (!document.hidden) verifyActive(); }, cfg.recheckIntervalMs);
-      document.addEventListener('visibilitychange', function () { if (!document.hidden) verifyActive(); });
-      window.addEventListener('online', function () { verifyActive(); });
+      setInterval(function () { if (!document.hidden) evaluate(); }, cfg.recheckIntervalMs);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) evaluate(); });
+      window.addEventListener('online', function () { down = {}; evaluate(); });
     }
 
     return {
       list: list,
       current: function () { return active; },
-      hasAlternative: function () { return nextAfter(active) !== null; },
+      ready: function () { return readyPromise; },
+      order: order,
+      hasAlternative: function () { return bestKnownAlternative(active) !== null; },
       reportFailure: reportFailure,
-      verify: verifyActive,
-      /** للاختبار من الـ Console: await App.servers.status() */
+      noteSuccess: noteSuccess,
+      evaluate: evaluate,
+      verify: evaluate,
+      /** للاختبار من الـ Console: await App.servers.status() — بيفحص الكل بالتوازي. */
       status: function () {
-        return Promise.all(list.map(function (u) {
-          var t0 = now();
-          return probe(u).then(function (ok) { return { url: u, healthy: ok, ms: now() - t0, active: u === active, cooling_down: isDown(u) }; });
-        }));
+        return raceProbes(list).all.then(function (rs) {
+          return rs.map(function (r) {
+            return { url: r.url, healthy: r.ok, ms: r.ms, avg_ms: stats[r.url].ms, active: r.url === active, cooling_down: isDown(r.url) };
+          });
+        });
       },
     };
   })();
@@ -189,51 +332,134 @@
   var RETRY_STATUSES = { 502: true, 503: true, 504: true };
 
   /**
-   * fetch مع Failover:
-   *  - GET/HEAD: لو السيرفر وقع/تأخر/رد 502-504 يجرب السيرفر اللي بعده تلقائياً.
-   *  - POST/PUT/DELETE: بيعيد المحاولة فقط على 502/503 (الطلب ماوصلش للتطبيق) عشان مانكرّرش
-   *    طلب اتنفذ (زي إنشاء طلب شراء مرتين). لو اتقطع الاتصال بيحوّل للسيرفر التاني للطلب الجاي.
+   * محاولة واحدة على سيرفر واحد مع timeout وإمكانية الإلغاء.
+   * callerAborted = الإلغاء جه من صاحب الطلب (مش timeout ولا إلغاء داخلي).
    */
+  function startAttempt(base, fullPath, config, timeoutMs) {
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var t = { base: base, callerAborted: false, promise: null, abort: function () { if (ctrl) ctrl.abort(); } };
+    var timer = null;
+    var outer = config.signal;
+
+    if (ctrl && outer) {
+      if (outer.aborted) { t.callerAborted = true; ctrl.abort(); }
+      else outer.addEventListener('abort', function () { t.callerAborted = true; ctrl.abort(); }, { once: true });
+    }
+    if (ctrl) timer = setTimeout(function () { ctrl.abort(); }, timeoutMs);
+    if (SERVER_CONFIG.logRequests) console.debug('[api]', String(config.method || 'GET').toUpperCase(), base + fullPath);
+
+    var init = ctrl ? Object.assign({}, config, { signal: ctrl.signal }) : config;
+    t.promise = fetch(base + fullPath, init).then(
+      function (res) { if (timer) clearTimeout(timer); return res; },
+      function (err) { if (timer) clearTimeout(timer); throw err; }
+    );
+    return t;
+  }
+
+  function discardBody(res) {
+    try { if (res && res.body && typeof res.body.cancel === 'function') res.body.cancel(); } catch (e) { /* ignore */ }
+  }
+
+  /**
+   * GET/HEAD: "hedged request" — لو السيرفر الحالي وقع/رد 502-504 نكمل على اللي بعده فوراً،
+   * ولو اتأخر (hedgeAfterMs) نبعت للتاني بالتوازي. أول رد سليم يكسب والباقي يتلغي.
+   */
+  function hedgedRequest(fullPath, config) {
+    return new Promise(function (resolve, reject) {
+      var candidates = ServerPool.order();
+      var tries = [], idx = 0, pending = 0, settled = false;
+      var hedgeTimer = null, lastRes = null, lastResTry = null, lastErr = null;
+
+      function settle(winner, fn, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hedgeTimer);
+        tries.forEach(function (t) { if (t !== winner) t.abort(); });
+        fn(value);
+      }
+
+      function advance() {
+        if (settled || pending > 0) return;
+        if (launch()) return;
+        if (lastRes) settle(lastResTry, resolve, lastRes);
+        else settle(null, reject, lastErr || new Error('network'));
+      }
+
+      function launch() {
+        if (idx >= candidates.length) return false;
+        var t = startAttempt(candidates[idx++], fullPath, config, SERVER_CONFIG.requestTimeoutMs);
+        tries.push(t);
+        pending++;
+
+        t.promise.then(function (res) {
+          pending--;
+          if (settled) { discardBody(res); return; }
+          if (RETRY_STATUSES[res.status]) {
+            ServerPool.reportFailure(t.base, 'http-' + res.status);
+            discardBody(lastRes);
+            lastRes = res; lastResTry = t;
+            advance();
+          } else {
+            ServerPool.noteSuccess(t.base);
+            if (t.base !== ServerPool.current()) ServerPool.evaluate();
+            settle(t, resolve, res);
+          }
+        }, function (err) {
+          pending--;
+          if (settled) return;
+          if (t.callerAborted) { settle(null, reject, err); return; }
+          lastErr = err;
+          ServerPool.reportFailure(t.base, err && err.name === 'AbortError' ? 'timeout' : 'network');
+          advance();
+        });
+
+        clearTimeout(hedgeTimer);
+        if (idx < candidates.length) {
+          hedgeTimer = setTimeout(function () { if (!settled) launch(); }, SERVER_CONFIG.hedgeAfterMs);
+        }
+        return true;
+      }
+
+      launch();
+    });
+  }
+
+  /**
+   * POST/PUT/DELETE: بنجرّب السيرفر التاني فقط لو الرد 502/503 (الطلب ماوصلش للتطبيق)،
+   * عشان ما نكرّرش عملية اتنفذت فعلاً (زي إنشاء طلب شراء مرتين).
+   * لو اتقطع الاتصال/timeout بنحوّل للسيرفر التاني للطلب الجاي بس.
+   */
+  async function sendWrite(fullPath, config) {
+    var candidates = ServerPool.order();
+    var lastRes = null;
+    for (var i = 0; i < candidates.length; i++) {
+      var base = candidates[i];
+      var t = startAttempt(base, fullPath, config, SERVER_CONFIG.writeTimeoutMs);
+      var res;
+      try {
+        res = await t.promise;
+      } catch (err) {
+        var timedOut = !!err && err.name === 'AbortError' && !t.callerAborted;
+        if (!t.callerAborted && !timedOut) ServerPool.reportFailure(base, 'network');
+        throw err;
+      }
+      if (res.status !== 502 && res.status !== 503) { ServerPool.noteSuccess(base); return res; }
+      ServerPool.reportFailure(base, 'http-' + res.status);
+      discardBody(lastRes);
+      lastRes = res;
+    }
+    return lastRes;
+  }
+
   async function fetchWithFailover(path, config) {
     path = String(path || '');
     config = config || {};
     if (/^https?:\/\//i.test(path)) return fetch(path, config);
 
     var method = String(config.method || 'GET').toUpperCase();
-    var safe = method === 'GET' || method === 'HEAD';
-    var timeout = safe ? SERVER_CONFIG.requestTimeoutMs : SERVER_CONFIG.writeTimeoutMs;
     var fullPath = path.charAt(0) === '/' ? path : '/' + path;
-    var lastRes = null, lastErr = null;
-
-    for (var attempt = 0; attempt < ServerPool.list.length; attempt++) {
-      var base = ServerPool.current();
-      var ctrl = (typeof AbortController !== 'undefined' && !config.signal) ? new AbortController() : null;
-      var timer = null;
-      if (ctrl) {
-        timer = setTimeout((function (c) { return function () { c.abort(); }; })(ctrl), timeout);
-      }
-      if (SERVER_CONFIG.logRequests) console.debug('[api]', method, base + fullPath);
-      try {
-        var res = await fetch(base + fullPath,
-          ctrl ? Object.assign({}, config, { signal: ctrl.signal }) : config);
-        if (timer) clearTimeout(timer);
-
-        var retryable = safe ? RETRY_STATUSES[res.status] : (res.status === 502 || res.status === 503);
-        if (!retryable) return res;
-
-        lastRes = res;
-        ServerPool.reportFailure(base, 'http-' + res.status);
-        if (ServerPool.current() === base) return res; // مفيش بديل
-      } catch (err) {
-        if (timer) clearTimeout(timer);
-        lastErr = err;
-        var timedOut = !!err && err.name === 'AbortError';
-        if (!timedOut || safe) ServerPool.reportFailure(base, timedOut ? 'timeout' : 'network');
-        if (!safe || ServerPool.current() === base) break;
-      }
-    }
-    if (lastRes) return lastRes;
-    throw lastErr || new Error('network');
+    await ServerPool.ready(); // أول زيارة فقط: انتظار أسرع سيرفر سليم (محدود بـ healthTimeoutMs)
+    return (method === 'GET' || method === 'HEAD') ? hedgedRequest(fullPath, config) : sendWrite(fullPath, config);
   }
 
   var FALLBACK_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -285,6 +511,7 @@
     info: 'fa-circle-info',
   };
   var TOAST_TITLES = { success: 'تم بنجاح', error: 'تنبيه', warning: 'انتبه', info: 'إشعار' };
+  var MAX_TOASTS = 4;
 
   function showToast(message, type, duration) {
     type = type || 'info';
@@ -301,6 +528,7 @@
       region.setAttribute('aria-live', 'polite');
       document.body.appendChild(region);
     }
+    while (region.children.length >= MAX_TOASTS) region.removeChild(region.firstChild);
 
     var toast = document.createElement('div');
     toast.className = 'toast ' + type;
@@ -326,15 +554,19 @@
   // ---------------------------------------------------------------------------
   // 3. API wrapper
   // ---------------------------------------------------------------------------
+  var AUTH_ISSUING_PATH = /\/api\/auth\//;
+  var AUTH_NON_ISSUING_PATH = /\/api\/auth\/(me|log_out)(\?|$|\/)/;
+
   async function fetchAPI(url, options) {
     options = options || {};
     url = String(url || '');
+    var internal = !/^https?:\/\//i.test(url);
     var headers = {};
     if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
 
-    // Bearer fallback: يتبعت مع كل طلب لسيرفراتنا (مش للروابط الخارجية الكاملة)
-    var token = getToken();
-    if (token && !/^https?:\/\//i.test(url)) headers['Authorization'] = 'Bearer ' + token;
+    // Bearer fallback: يتبعت مع كل طلب لسيرفراتنا فقط (مش للروابط الخارجية)
+    var token = internal ? getToken() : '';
+    if (token) headers['Authorization'] = 'Bearer ' + token;
 
     var config = Object.assign({ credentials: 'include' }, options, {
       headers: Object.assign(headers, options.headers || {}),
@@ -343,17 +575,21 @@
     try {
       var response = await fetchWithFailover(url, config);
       var data = await response.json().catch(function () { return {}; });
+      if (!data || typeof data !== 'object') data = {};
 
       // سجّل/حدّث الـ token لو السيرفر رجّعه (login / register)
-      var issued = (data && typeof data.token === 'string' && data.token) ||
-                   (data && data.data && typeof data.data.token === 'string' && data.data.token) || '';
-      if (response.ok && issued && /\/api\/auth\//.test(url) && url.indexOf('/api/auth/me') === -1) {
+      var issued = (typeof data.token === 'string' && data.token) ||
+                   (data.data && typeof data.data.token === 'string' && data.data.token) || '';
+      if (response.ok && issued && AUTH_ISSUING_PATH.test(url) && !AUTH_NON_ISSUING_PATH.test(url)) {
         setToken(issued);
       }
 
-      // token منتهي/غير صالح -> امسحه عشان ما يتبعتش تاني
-      if (response.status === 401 && token && /\/api\/auth\/me/.test(url)) {
+      // 401 على طلب كان شايل token (وأي endpoint، مش /me بس) → التوكن مرفوض: امسحه عشان ما يتبعتش تاني.
+      // الشرط getToken() === token بيمنع مسح token جديد اتسجّل أثناء الطلب.
+      if (response.status === 401 && token && getToken() === token) {
         clearToken();
+        auth.invalidate();
+        try { window.dispatchEvent(new CustomEvent('market:session_expired')); } catch (e) { /* ignore */ }
       }
 
       if (!response.ok) {
@@ -365,6 +601,7 @@
       }
       return { ok: true, status: response.status, data: data.data, message: data.message, pagination: data.pagination, raw: data };
     } catch (err) {
+      if (err && err.name === 'AbortError') return { ok: false, status: 0, aborted: true, message: 'تم إلغاء الطلب' };
       return { ok: false, status: 0, message: 'تعذر الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت.' };
     }
   }
@@ -372,15 +609,39 @@
   // ---------------------------------------------------------------------------
   // 4. Auth
   // ---------------------------------------------------------------------------
+
+  /**
+   * تسجيل الخروج على كل السيرفرات بالتوازي (best-effort، أقصى انتظار ~4 ثواني).
+   * ضروري لأن الكوكي مربوطة بدومين كل سيرفر: لو المستخدم اتحوّل بين سيرفرين، log_out على
+   * السيرفر الحالي بس كان هيسيب كوكي صالحة على التاني.
+   */
+  function logoutEverywhere(token) {
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    return Promise.all(ServerPool.list.map(function (base) {
+      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 4000) : null;
+      return fetch(base + '/api/auth/log_out', {
+        method: 'POST', credentials: 'include', headers: headers, signal: ctrl ? ctrl.signal : undefined,
+      }).then(function (r) { return r.ok; }, function () { return false; })
+        .then(function (ok) { if (timer) clearTimeout(timer); return ok; });
+    }));
+  }
+
   var auth = {
     currentUser: null,
+    networkError: false,
     _pending: null,
+    _loggingOut: false,
 
-    /** Resolves the signed-in user or null. One network call per page load. */
-    me: function () {
+    /** Resolves the signed-in user or null. One network call per page load (يعيد المحاولة بعد فشل الشبكة). */
+    me: function (force) {
       var self = this;
+      if (force) self._pending = null;
       if (!self._pending) {
         self._pending = fetchAPI('/api/auth/me').then(function (res) {
+          // فشل شبكة/سيرفر ≠ "غير مسجّل": ما نكاشش النتيجة ونسيب المحاولة الجاية تعيد الفحص
+          self.networkError = !res.ok && (res.status === 0 || res.status >= 500);
+          if (self.networkError) { self._pending = null; self.currentUser = null; return null; }
           self.currentUser = (res.ok && res.raw && res.raw.authenticated && res.raw.user) ? res.raw.user : null;
           return self.currentUser;
         });
@@ -388,19 +649,34 @@
       return self._pending;
     },
 
-    async logout() {
-      await fetchAPI('/api/auth/log_out', { method: 'POST' });
-      clearToken();
+    /** يمسح الحالة المخزنة محلياً (بعد 401 / تسجيل خروج / تغيير التوكن من تاب تاني). */
+    invalidate: function () {
       this.currentUser = null;
       this._pending = null;
+      this.networkError = false;
+    },
+
+    async logout() {
+      if (this._loggingOut) return;
+      this._loggingOut = true;
+      // 1) امسح التوكن محلياً الأول: حتى لو الشبكة وقعت المستخدم يطلع فعلاً من جهته
+      var token = getToken();
+      clearToken();
+      this.invalidate();
+      // 2) اطلب من كل السيرفرات تمسح الكوكي (والتوكن بيتبعت صراحةً عشان السيرفر يعرف مين اللي بيخرج)
+      await logoutEverywhere(token);
       showToast('تم تسجيل الخروج بنجاح', 'success');
-      setTimeout(function () { window.location.href = '/login.html'; }, 700);
+      setTimeout(function () { window.location.href = '/login.html'; }, 600);
     },
 
     async requireAuth(allowedRoles) {
       allowedRoles = allowedRoles || [];
       var user = await this.me();
       if (!user) {
+        if (this.networkError) {
+          showToast('تعذر التحقق من حسابك الآن. تأكد من اتصالك بالإنترنت وأعد تحميل الصفحة.', 'error');
+          return null;
+        }
         showToast('يرجى تسجيل الدخول أولاً للوصول لهذه الصفحة', 'warning');
         setTimeout(function () {
           window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
@@ -416,6 +692,15 @@
     },
   };
 
+  // مزامنة الجلسة بين التابات: تسجيل خروج/دخول في تاب بيتعكس في الباقي
+  window.addEventListener('storage', function (e) {
+    if (e.key !== TOKEN_KEY && e.key !== null) return;
+    var hadUser = !!auth.currentUser;
+    auth.invalidate();
+    try { window.dispatchEvent(new CustomEvent('market:auth_changed')); } catch (err) { /* ignore */ }
+    if (hadUser && !auth._loggingOut) window.location.reload();
+  });
+
   // ---------------------------------------------------------------------------
   // 5. Cart (localStorage, with safe fallbacks)
   // ---------------------------------------------------------------------------
@@ -423,7 +708,10 @@
     KEY: 'more_stores_cart',
 
     get: function () {
-      try { return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch (e) { return []; }
+      try {
+        var parsed = JSON.parse(localStorage.getItem(this.KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) { return []; }
     },
 
     save: function (items) {
@@ -433,13 +721,13 @@
     },
 
     add: function (product, quantity) {
-      quantity = quantity || 1;
+      quantity = Math.max(1, parseInt(quantity, 10) || 1);
       var items = this.get();
       var id = product._id || product.id;
       var existing = items.find(function (item) { return item.id === id; });
 
       if (existing) {
-        existing.quantity += quantity;
+        existing.quantity = (existing.quantity || 0) + quantity;
       } else {
         items.push({
           id: id,
@@ -457,6 +745,7 @@
     },
 
     update: function (id, quantity) {
+      quantity = parseInt(quantity, 10) || 0;
       var items = this.get();
       if (quantity <= 0) {
         items = items.filter(function (item) { return item.id !== id; });
@@ -485,7 +774,7 @@
     total: function () {
       return this.get().reduce(function (sum, item) {
         var p = item.final_price !== undefined ? item.final_price : item.price;
-        return sum + p * (item.quantity || 1);
+        return sum + (Number(p) || 0) * (item.quantity || 1);
       }, 0);
     },
 
@@ -649,8 +938,10 @@
       if (!headerHost && !footerHost) return;
 
       var self = this;
+      // مستمع واحد (event delegation) لكل أزرار الهيدر/الدروار/الفوتر، بما فيها تسجيل الخروج
       document.addEventListener('click', function (e) {
-        if (e.target.closest('[data-drawer-open]')) self.toggleDrawer(true);
+        if (e.target.closest('[data-logout]')) auth.logout();
+        else if (e.target.closest('[data-drawer-open]')) self.toggleDrawer(true);
         else if (e.target.closest('[data-drawer-close]')) self.toggleDrawer(false);
         else if (e.target.id === 'drawer-backdrop') self.toggleDrawer(false);
         else if (e.target.closest('[data-back-to-top]')) window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -673,7 +964,6 @@
       this.markActiveNav();
       this.loadSections();
       this.applyUser();
-      cart.updateBadges();
     },
 
     search: function () {
@@ -718,9 +1008,10 @@
         }).join('');
       }
       if (drawer) {
+        var emptyMsg = res.ok ? 'لا توجد أقسام بعد' : 'تعذر تحميل الأقسام';
         drawer.innerHTML = list.map(function (sec) {
           return '<a href="/products.html?section=' + encodeURIComponent(sec.name) + '" class="drawer-link-item"><span>' + escapeHtml(sec.name) + '</span><i class="fa-solid fa-angle-left"></i></a>';
-        }).join('') || '<div class="drawer-link-item" style="color:var(--text-secondary);">لا توجد أقسام بعد</div>';
+        }).join('') || '<div class="drawer-link-item" style="color:var(--text-secondary);">' + emptyMsg + '</div>';
       }
     },
 
@@ -748,9 +1039,9 @@
           '<span class="badge ' + roleClass + '">' + roleLabel + '</span>';
       }
 
-      var extra = '';
-      if (user.role === 'seller') extra += '<a href="/seller-dashboard.html"><i class="fa-solid fa-store"></i> لوحة البائع</a>';
-      if (user.role === 'super_admin') extra += '<a href="/admin-dashboard.html"><i class="fa-solid fa-gear"></i> لوحة المدير العام</a>';
+      var extraLinks = [];
+      if (user.role === 'seller') extraLinks.push({ href: '/seller-dashboard.html', icon: 'fa-store', label: 'لوحة البائع' });
+      if (user.role === 'super_admin') extraLinks.push({ href: '/admin-dashboard.html', icon: 'fa-gear', label: 'لوحة المدير العام' });
 
       var menu = document.getElementById('flyout-menu-links');
       if (menu) {
@@ -758,20 +1049,19 @@
           '<a href="/profile.html"><i class="fa-regular fa-user"></i> إدارة الحساب</a>' +
           '<a href="/orders.html"><i class="fa-solid fa-clock-rotate-left"></i> سجل طلباتي</a>' +
           '<a href="/cart.html"><i class="fa-solid fa-cart-shopping"></i> سلة المشتريات</a>' +
-          extra +
+          extraLinks.map(function (l) { return '<a href="' + l.href + '"><i class="fa-solid ' + l.icon + '"></i> ' + l.label + '</a>'; }).join('') +
           '<button type="button" class="flyout-logout-btn" data-logout><i class="fa-solid fa-arrow-right-from-bracket"></i> تسجيل الخروج</button>';
       }
       var drawerAuth = document.getElementById('drawer-auth-actions');
       if (drawerAuth) {
-        drawerAuth.innerHTML = extra.replace(/<a /g, '<a class="drawer-link-item" ').replace(/<i [^>]*><\/i> /g, '') +
+        drawerAuth.innerHTML =
+          extraLinks.map(function (l) {
+            return '<a href="' + l.href + '" class="drawer-link-item"><span>' + l.label + '</span><i class="fa-solid fa-angle-left"></i></a>';
+          }).join('') +
           '<button type="button" class="button btn-danger btn-block btn-sm" data-logout style="margin-top:10px;">تسجيل الخروج</button>';
       }
       var loc = document.getElementById('header-location-text');
       if (loc && user.GPS_URL) loc.textContent = 'عنوانك المسجل';
-
-      document.querySelectorAll('[data-logout]').forEach(function (btn) {
-        btn.addEventListener('click', function () { auth.logout(); });
-      });
     },
   };
 
@@ -795,7 +1085,7 @@
           transports: ['websocket'],
           withCredentials: true,
           reconnectionDelayMax: 5000,
-          // يتبعت الـ token كمان لو السيرفر عايز يعرّف المستخدم من الـ socket (ما بيأثرش لو مش مستخدم)
+          // التوكن بيتقرا عند كل (إعادة) اتصال، فلو اتمسح/اتجدد بيتبعت الحالي
           auth: function (cb) { cb({ token: getToken() }); },
         });
 
@@ -954,7 +1244,7 @@
       var body = document.getElementById('ai-chat-msgs');
       var el = document.createElement('div');
       el.className = 'ai-bubble ' + (role === 'user' ? 'outgoing' : 'incoming');
-      var html = '<div>' + escapeHtml(text) + '</div>';
+      var html = '<div>' + escapeHtml(text).replace(/\n/g, '<br>') + '</div>';
 
       if (products && products.length) {
         html += '<div class="ai-product-slider">' + products.map(function (p) {
@@ -987,13 +1277,13 @@
     var out = qty !== undefined && qty !== null && Number(qty) <= 0;
     var low = !out && Number(qty) > 0 && Number(qty) <= 3;
     var stock = out ? '<span class="card-condition card-stock-low"><i class="fa-solid fa-circle-xmark"></i> غير متوفر حالياً</span>'
-      : low ? '<span class="card-condition card-stock-low"><i class="fa-solid fa-circle-exclamation"></i> متبقي ' + qty + ' فقط</span>'
+      : low ? '<span class="card-condition card-stock-low"><i class="fa-solid fa-circle-exclamation"></i> متبقي ' + escapeHtml(qty) + ' فقط</span>'
       : '<span class="card-condition"><i class="fa-solid fa-circle-check"></i> مفحوص ومتوفر</span>';
     var storeLink = p.store_slug
       ? '<a href="/store.html?slug=' + encodeURIComponent(p.store_slug) + '" class="card-shipping" style="color:var(--link); font-weight:700;"><i class="fa-solid fa-store"></i><span>زيارة المتجر</span></a>'
       : '';
     return '<div class="product-card' + (out ? ' is-out-of-stock' : '') + '">' +
-      '<div class="card-top-badges">' + (hasDiscount ? '<span class="badge badge-discount">توفير ' + p.discount + '%</span>' : '<span></span>') + '</div>' +
+      '<div class="card-top-badges">' + (hasDiscount ? '<span class="badge badge-discount">توفير ' + escapeHtml(p.discount) + '%</span>' : '<span></span>') + '</div>' +
       '<a href="/product.html?id=' + escapeHtml(id) + '" class="product-image-wrap" data-card-link="' + escapeHtml(id) + '">' +
         '<img src="' + escapeHtml(img) + '" alt="' + escapeHtml(p.name) + '" class="product-image" loading="lazy" onerror="App.imgFallback(this)"></a>' +
       '<span class="product-card-category">' + escapeHtml((p.section && p.section.name) || 'عام') + '</span>' +
@@ -1020,7 +1310,11 @@
   // ---------------------------------------------------------------------------
   // 9. Init
   // ---------------------------------------------------------------------------
+  var initialized = false;
+
   async function init() {
+    if (initialized) return;
+    initialized = true;
     logActiveServer('عند تحميل الصفحة');
     shell.render();
     cart.updateBadges();
