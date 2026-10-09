@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    // GitHub Pages لا يملك مسارات السيرفر (/store/slug)، فنحوّلها لملفات الواجهة الحقيقية
+    (function () {
+      var m = location.pathname.match(/^\/store\/([^\/]+)(\/help)?\/?$/);
+      if (m) {
+        location.replace((m[2] ? '/help-center.html' : '/store.html') + '?slug=' + encodeURIComponent(decodeURIComponent(m[1])));
+      }
+    })();
+  </script>
+  <title>الصفحة غير موجودة | سوق </title>
+  <meta name="description" content="عذراً، الصفحة التي تبحث عنها في سوق مكسب  غير متوفرة أو تم نقلها.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- 404 Main Panel -->
+  <main class="container" style="padding: 48px var(--gutter-desktop) 64px;">
+    <div class="empty-state-box" style="max-width: 620px; margin: 0 auto; padding: 48px 24px; box-shadow: var(--shadow-sm);">
+      <div style="font-size: 5rem; font-weight: 900; color: var(--accent); line-height: 1; margin-bottom: 12px; letter-spacing: -2px;">
+        404
+      </div>
+
+      <h1 style="font-size: 22px; font-weight: 800; margin-bottom: 8px; color: var(--text-primary);">
+        عذراً، لم نتمكن من العثور على هذه الصفحة!
+      </h1>
+
+      <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px;">
+        ربما تم نقل السلعة، أو انتهت صلاحية الرابط، أو تم بيع المنتج وحذفه من قبل البائع. يمكنك البحث في شريط البحث أعلاه أو استكشاف الأقسام المتاحة.
+      </p>
+
+      <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <a href="/" class="button btn-accent">
+          <i class="fa-solid fa-house"></i> العودة للصفحة الرئيسية
+        </a>
+        <a href="/products.html" class="button btn-secondary">
+          <i class="fa-solid fa-boxes-stacked"></i> تصفح جميع المعروضات
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

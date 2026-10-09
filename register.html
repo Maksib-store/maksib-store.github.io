@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>إنشاء حساب جديد | سوق المكسب</title>
+  <meta name="description" content="أنشئ حسابك الجديد في سوق المكسب للبدء في شراء وبيع المنتجات المكسبة المفحوصة بكل ثقة.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body style="background-color: #FFFFFF;">
+
+  <div class="auth-shell">
+    <div class="auth-main">
+      <!-- Logo -->
+      <a href="/" class="auth-brand-header">
+        <i class="fa-solid fa-boxes-packing brand-badge" style="color: var(--accent); font-size: 26px;"></i>
+        <span>سوق المكسب</span>
+        <span class="tld">.إلكتروني</span>
+      </a>
+
+      <!-- Amazon Style Registration Card -->
+      <div class="auth-card" style="max-width: 460px;">
+        <h2>إنشاء حساب</h2>
+        <p class="auth-subtitle">انضم اليوم لأكبر منصة لتداول السلع المكسبة المضمونة</p>
+
+        <div id="register-feedback" style="display:none; margin-bottom:14px; padding:10px 12px; border-radius:var(--radius-xs); font-size:13px;"></div>
+
+        <form id="form-register">
+          <div class="field">
+            <label for="reg-name">الاسم الكامل</label>
+            <input type="text" id="reg-name" class="input" placeholder="مثال: أحمد محمد" required autocomplete="name">
+          </div>
+
+          <div class="field">
+            <label for="reg-email">البريد الإلكتروني</label>
+            <input type="email" id="reg-email" class="input" placeholder="name@example.com" required autocomplete="email">
+          </div>
+
+          <div class="field">
+            <label for="reg-password">كلمة المرور</label>
+            <input type="password" id="reg-password" class="input" placeholder="8 أحرف على الأقل" required minlength="8" maxlength="128" autocomplete="new-password">
+            <small style="font-size:11px; color:var(--text-secondary); margin-top:3px;">
+              <i class="fa-solid fa-circle-info" style="color:var(--link);"></i> يجب أن تتكون كلمة المرور من 8 إلى 128 حرفاً.
+            </small>
+          </div>
+
+          <!-- Phone & WhatsApp Numbers -->
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+            <div class="field">
+              <label for="reg-phone">رقم الهاتف</label>
+              <input type="tel" id="reg-phone" class="input" placeholder="01012345678" required autocomplete="tel">
+            </div>
+
+            <div class="field">
+              <label for="reg-whatsapp">رقم الواتساب</label>
+              <input type="tel" id="reg-whatsapp" class="input" placeholder="01012345678" required>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="reg-gps">رابط أو عنوان الموقع الجغرافي (GPS)</label>
+            <input type="text" id="reg-gps" class="input" placeholder="رابط خرائط جوجل أو المدينة والحي..." required>
+            <small style="font-size:11px; color:var(--text-secondary); margin-top:3px;">
+              يساعد البائعين في تحديد رسوم وإمكانية التسليم المباشر لموقعك.
+            </small>
+          </div>
+
+          <button type="submit" id="btn-register-submit" class="auth-submit" style="margin-top:14px;">
+            متابعة وإنشاء الحساب
+          </button>
+
+          <p class="auth-disclaimer">
+            بإنشاء حسابك، فإنك تؤكد موافقتك على <a href="#">شروط الاستخدام والبيع</a> وإشعار الخصوصية الخاص بسوق المكسب.
+          </p>
+        </form>
+
+        <div style="border-top:1px solid var(--border-light); padding-top:14px; margin-top:16px; font-size:13px;">
+          <span>لديك حساب بالفعل؟</span>
+          <a href="/login.html" style="font-weight:700; color:var(--link); margin-inline-start:4px;">
+            تسجيل الدخول <i class="fa-solid fa-caret-left" style="font-size:10px;"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- Auth Footer -->
+      <footer class="auth-footer">
+        <div style="display:flex; justify-content:center; gap:18px; margin-bottom:8px;">
+          <a href="#">شروط الاستخدام</a>
+          <a href="#">إشعار الخصوصية</a>
+          <a href="#">المساعدة</a>
+        </div>
+        <p>&copy; 2026 سوق المكسب أو الشركات التابعة له. كافة الحقوق محفوظة.</p>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    document.getElementById('form-register').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const feedback = document.getElementById('register-feedback');
+      feedback.style.display = 'none';
+
+      const payload = {
+        name: document.getElementById('reg-name').value.trim(),
+        email: document.getElementById('reg-email').value.trim(),
+        password: document.getElementById('reg-password').value,
+        phone_number: document.getElementById('reg-phone').value.trim(),
+        whatsApp_number: document.getElementById('reg-whatsapp').value.trim(),
+        GPS_URL: document.getElementById('reg-gps').value.trim(),
+      };
+
+      const btn = document.getElementById('btn-register-submit');
+      btn.disabled = true;
+      btn.innerText = 'جارٍ إنشاء الحساب...';
+
+      const res = await App.fetchAPI('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      btn.disabled = false;
+      btn.innerText = 'متابعة وإنشاء الحساب';
+
+      if (res.ok) {
+        App.showToast('تم إنشاء الحساب بنجاح! يتم توجيهك الآن...', 'success');
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 800);
+      } else {
+        feedback.style.display = 'block';
+        feedback.style.background = 'var(--error-bg)';
+        feedback.style.color = 'var(--error)';
+        feedback.style.border = '1px solid #FECDD3';
+        feedback.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${App.escapeHtml(res.message || 'تعذر إنشاء الحساب، يرجى مراجعة البيانات المدخلة.')}`;
+      }
+    });
+  </script>
+</body>
+</html>

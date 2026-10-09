@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>سوق مكسب | منصة التجارة الإلكترونية للمنتجات مكسب</title>
+  <meta name="description" content="منصة متطورة على طراز أمازون لبيع وشراء المنتجات مكسب المضمونة والمفحوصة مع بائعين معتمدين وشحن سريع.">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- Main Marketplace Body -->
+  <main class="marketplace-page">
+    <!-- Hero Carousel -->
+    <section class="home-hero" aria-roledescription="carousel" aria-label="عروض سوق مكسب">
+      <div class="container">
+        <div class="hero-carousel" id="hero-carousel">
+          <div class="hero-track" id="hero-track"></div>
+          <button type="button" class="hero-nav hero-nav-prev" id="hero-prev" aria-label="الصورة السابقة"><i class="fa-solid fa-chevron-right"></i></button>
+          <button type="button" class="hero-nav hero-nav-next" id="hero-next" aria-label="الصورة التالية"><i class="fa-solid fa-chevron-left"></i></button>
+          <div class="hero-dots" id="hero-dots" role="tablist" aria-label="اختيار الشريحة"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="container">
+      <!-- Trust Bar -->
+      <section class="trust-bar">
+        <div class="trust-item">
+          <i class="fa-solid fa-shield-halved"></i>
+          <div>
+            <strong>بائعون معتمدون</strong>
+            <span>مراجعة بيانات كل بائع وتوثيقه</span>
+          </div>
+        </div>
+        <div class="trust-item">
+          <i class="fa-solid fa-truck-fast"></i>
+          <div>
+            <strong>تنسيق تسليم سريع</strong>
+            <span>تواصل وموقع GPS مباشر</span>
+          </div>
+        </div>
+        <div class="trust-item">
+          <i class="fa-solid fa-tags"></i>
+          <div>
+            <strong>كوبونات وخصومات دورية</strong>
+            <span>توفير إضافي عند إتمام الطلب</span>
+          </div>
+        </div>
+        <div class="trust-item">
+          <i class="fa-solid fa-headset"></i>
+          <div>
+            <strong>تحديثات فورية للطلبات</strong>
+            <span>إشعارات فورية بكل تحديث</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Category Bento Shortcuts -->
+      <section class="category-bento-grid is-text" id="category-bento-area">
+        <!-- Loaded via JS -->
+      </section>
+
+      <!-- Shelf 1: Latest Products -->
+      <section class="marketplace-shelf" id="shelf-latest">
+        <div class="shelf-header">
+          <div class="shelf-title-wrap">
+            <h2 class="shelf-title">أحدث المنتجات</h2>
+            <span class="shelf-subtitle">آخر 10 منتجات تمت إضافتها على السوق</span>
+          </div>
+          <a href="/products.html" class="shelf-view-all">مشاهدة الكل &larr;</a>
+        </div>
+        <div class="product-grid" id="home-products-grid">
+          <!-- Skeletons while loading -->
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+        </div>
+      </section>
+
+      <!-- Shelf 2: Discounts (hidden until there are discounted products) -->
+      <section class="marketplace-shelf" id="shelf-discounts" hidden>
+        <div class="shelf-header">
+          <div class="shelf-title-wrap">
+            <h2 class="shelf-title">الخصومات</h2>
+            <span class="shelf-subtitle">منتجات عليها خصم فعلي، مرتبة من الأعلى خصماً</span>
+          </div>
+          <a href="/products.html" class="shelf-view-all">مشاهدة الكل &larr;</a>
+        </div>
+        <div class="product-grid" id="discounts-grid"></div>
+      </section>
+
+      <!-- Shelf 3: Top rated (hidden until there are rated products) -->
+      <section class="marketplace-shelf" id="shelf-rated" hidden>
+        <div class="shelf-header">
+          <div class="shelf-title-wrap">
+            <h2 class="shelf-title">أعلى التقييمات</h2>
+            <span class="shelf-subtitle">المنتجات الأعلى تقييماً من المشترين</span>
+          </div>
+          <a href="/products.html" class="shelf-view-all">مشاهدة الكل &larr;</a>
+        </div>
+        <div class="product-grid" id="rated-grid"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Amazon-style Comprehensive Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+  <script>
+
+    /* ---------- Hero carousel ----------
+       لتغيير الصور: غيّر قيمة image في كل شريحة بالرابط الجديد */
+    var HERO_SLIDES = [
+      { image: '/img/hero/slide-1.webp', rgb: '23,47,91',  bg: '#172f5b',
+        title: 'أجهزة مفحوصة بسعر أقل',
+        text: 'موبايلات ولابتوبات وسماعات من بائعين موثّقين. كل منتج بيتراجع قبل ما يتعرض.',
+        cta: 'تسوق الإلكترونيات', href: '/products.html' },
+      { image: '/img/hero/slide-2.webp', rgb: '51,26,86', bg: '#331a56',
+        title: 'بيتك يستاهل قطعة مميزة',
+        text: 'مفروشات وأثاث ومقتنيات نادرة بحالة ممتازة، من بيوت ناس اعتنت بيها.',
+        cta: 'شوف المفروشات', href: '/products.html' },
+      { image: '/img/hero/slide-3.webp', rgb: '22,92,72', bg: '#165c48',
+        title: 'عندك حاجة مش بتستخدمها؟ بيعها',
+        text: 'افتح متجرك على السوق ووصّل منتجاتك لآلاف المشترين من غير عمولات خفية.',
+        cta: 'ابدأ البيع', href: '/profile.html' }
+    ];
+
+    (function initHero() {
+      var root = document.getElementById('hero-carousel');
+      if (!root) return;
+      var track = document.getElementById('hero-track');
+      var dotsBox = document.getElementById('hero-dots');
+      var DELAY = 5500, idx = 0, timer = null, paused = false;
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      root.style.setProperty('--hero-delay', DELAY + 'ms');
+
+      track.innerHTML = HERO_SLIDES.map(function (s, i) {
+        return '<article class="hero-slide" role="tabpanel" aria-label="' + (i + 1) + ' من ' + HERO_SLIDES.length + '" style="--slide-rgb:' + s.rgb + ';--slide-bg:' + s.bg + '">' +
+          '<img src="' + s.image + '" alt="" ' + (i === 0 ? 'fetchpriority="high"' : 'loading="lazy"') + '>' +
+          '<div class="hero-copy"><h1 class="hero-title">' + s.title + '</h1><p class="hero-text">' + s.text + '</p>' +
+          '<a class="button btn-accent hero-cta" href="' + s.href + '">' + s.cta + '</a></div></article>';
+      }).join('');
+      dotsBox.innerHTML = HERO_SLIDES.map(function (s, i) {
+        return '<button type="button" class="hero-dot" role="tab" aria-label="الشريحة ' + (i + 1) + '" data-i="' + i + '"></button>';
+      }).join('');
+
+      var slides = track.querySelectorAll('.hero-slide');
+      var dots = dotsBox.querySelectorAll('.hero-dot');
+
+      function show(n) {
+        idx = (n + slides.length) % slides.length;
+        slides.forEach(function (el, i) { el.classList.toggle('is-active', i === idx); el.setAttribute('aria-hidden', i === idx ? 'false' : 'true'); });
+        dots.forEach(function (d, i) {
+          d.classList.remove('is-active');
+          d.setAttribute('aria-selected', i === idx ? 'true' : 'false');
+        });
+        void dots[idx].offsetWidth; // restart progress animation
+        dots[idx].classList.add('is-active');
+        schedule();
+      }
+      function schedule() {
+        clearTimeout(timer);
+        if (reduce || paused) return;
+        timer = setTimeout(function () { show(idx + 1); }, DELAY);
+      }
+      function setPaused(v) {
+        paused = v;
+        root.classList.toggle('is-paused', v);
+        if (v) clearTimeout(timer); else schedule();
+      }
+
+      document.getElementById('hero-next').addEventListener('click', function () { show(idx + 1); });
+      document.getElementById('hero-prev').addEventListener('click', function () { show(idx - 1); });
+      dotsBox.addEventListener('click', function (e) {
+        var d = e.target.closest('.hero-dot'); if (d) show(Number(d.dataset.i));
+      });
+      root.addEventListener('mouseenter', function () { setPaused(true); });
+      root.addEventListener('mouseleave', function () { setPaused(false); });
+      root.addEventListener('focusin', function () { setPaused(true); });
+      root.addEventListener('focusout', function () { setPaused(false); });
+      document.addEventListener('visibilitychange', function () { setPaused(document.hidden); });
+      root.setAttribute('tabindex', '0');
+      root.addEventListener('keydown', function (e) {
+        if (e.target !== root) return;
+        if (e.key === 'ArrowLeft') show(idx + 1);   // RTL: اليسار = التالي
+        if (e.key === 'ArrowRight') show(idx - 1);
+      });
+      var sx = null;
+      root.addEventListener('pointerdown', function (e) { sx = e.clientX; });
+      root.addEventListener('pointerup', function (e) {
+        if (sx === null) return;
+        var dx = e.clientX - sx; sx = null;
+        if (Math.abs(dx) > 50) show(dx < 0 ? idx + 1 : idx - 1);
+      });
+      show(0);
+    })();
+
+    /* ---------- Card entrance animation ---------- */
+    var revealObserver = ('IntersectionObserver' in window) ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { var t = en.target; t.classList.add('is-in'); revealObserver.unobserve(t); setTimeout(function () { t.style.transitionDelay = ''; }, 1000); }
+      });
+    }, { threshold: 0.12 }) : null;
+    function revealCards(scope) {
+      if (!revealObserver) return;
+      (scope || document).querySelectorAll('.bento-card:not(.js-reveal), .product-card:not(.js-reveal)').forEach(function (el, i) {
+        el.classList.add('js-reveal');
+        el.style.transitionDelay = ((i % 5) * 70) + 'ms';
+        revealObserver.observe(el);
+      });
+    }
+
+    /* ---------- إعدادات الصفحة الرئيسية ---------- */
+    var HOME_CFG = {
+      MAX_SECTIONS: 8,   // أقصى عدد أقسام نصية تظهر
+      PER_SHELF: 10,     // عدد المنتجات في كل رف
+      POOL_SIZE: 50      // عدد المنتجات اللي بنجيبها مرة واحدة ونرتّب منها (لازم <= MAX_LIMIT في الباك إند)
+    };
+
+    /* ---------- أدوات قراءة بيانات المنتج (بتجرّب أكتر من اسم حقل) ---------- */
+    function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
+    function pick(p, keys) {
+      for (var i = 0; i < keys.length; i++) {
+        var v = p[keys[i]];
+        if (v !== undefined && v !== null && v !== '') return v;
+      }
+      return undefined;
+    }
+    // وقت الإضافة: من حقل تاريخ، أو من الـ ObjectId (أول 8 خانات = timestamp)
+    function createdTime(p) {
+      var d = pick(p, ['createdAt', 'created_at', 'created', 'date_added', 'date', 'timestamp']);
+      if (d !== undefined) { var t = new Date(d).getTime(); if (isFinite(t)) return t; }
+      var id = String(p._id || p.id || '');
+      if (/^[0-9a-f]{24}$/i.test(id)) return parseInt(id.slice(0, 8), 16) * 1000;
+      return 0;
+    }
+    // نسبة الخصم الفعلية (0 = مفيش خصم)
+    function discountPct(p) {
+      var d = num(p.discount);               // في الـ schema: discount = نسبة مئوية (0-100)
+      if (d > 0 && d <= 100) return Math.round(d);
+      var price = num(pick(p, ['price', 'current_price']));
+      var sale = num(pick(p, ['sale_price', 'discount_price', 'discounted_price']));
+      var old = num(pick(p, ['old_price', 'oldPrice', 'original_price', 'originalPrice', 'compare_at_price', 'price_before']));
+      if (sale > 0 && price > 0 && sale < price) { old = price; price = sale; }
+      if (old > 0 && price > 0 && old > price) return Math.round((old - price) / old * 100);
+      var pct = num(pick(p, ['discount_percent', 'discountPercent', 'discount_percentage', 'discount']));
+      return pct > 0 && pct < 100 ? pct : 0;
+    }
+    // التقييمات: الـ API بيرجّع avg_rating (المتوسط) و reviews_count (العدد) بدل مصفوفة reviews
+    function reviewsOf(p) { return Math.max(0, Math.floor(num(p.reviews_count))); }
+    function ratingOf(p) {
+      var r = num(p.avg_rating);
+      return r > 0 && r <= 5 ? r : 0;
+    }
+
+    function fillShelf(shelfId, gridId, list) {
+      var shelf = document.getElementById(shelfId);
+      var grid = document.getElementById(gridId);
+      if (!shelf || !grid) return;
+      if (!list.length) { shelf.hidden = true; return; }
+      grid.innerHTML = list.map(App.productCard).join('');
+      shelf.hidden = false;
+      revealCards(grid);
+    }
+
+    async function loadHomeData() {
+      // 1) الأقسام: نص فقط (بدون صور ولا طلب منتجات إضافي)
+      const secRes = await App.fetchAPI('/api/get_all_sections');
+      const bentoArea = document.getElementById('category-bento-area');
+
+      if (secRes.ok && Array.isArray(secRes.data) && secRes.data.length > 0) {
+        bentoArea.innerHTML = secRes.data.slice(0, HOME_CFG.MAX_SECTIONS).map(sec => `
+          <a href="/products.html?section=${encodeURIComponent(sec.name)}" class="bento-card bento-text">
+            <h3>${App.escapeHtml(sec.name)}</h3>
+            <span class="bento-link">تسوق الآن</span>
+          </a>`).join('');
+        revealCards(bentoArea);
+      } else {
+        bentoArea.hidden = true;
+      }
+
+      // 2) المنتجات: بنجيب دفعة واحدة ونرتّبها لثلاثة رفوف
+      const res = await App.fetchAPI('/api/get_products?limit=' + HOME_CFG.POOL_SIZE + '&page=1');
+      const pool = (res.ok && Array.isArray(res.data)) ? res.data : [];
+      const N = HOME_CFG.PER_SHELF;
+      const prodContainer = document.getElementById('home-products-grid');
+
+      if (!pool.length) {
+        prodContainer.innerHTML = `
+          <div class="empty-state-box" style="grid-column: 1 / -1;">
+            <i class="fa-solid fa-box-open empty-state-icon"></i>
+            <h2>لا توجد منتجات معروضة حالياً</h2>
+            <p>كن أول من يضيف سلعة مكسب مفحوصة في المنصة!</p>
+            <a href="/profile.html" class="button btn-accent">انضم كبائع الآن</a>
+          </div>`;
+        document.getElementById('shelf-discounts').hidden = true;
+        document.getElementById('shelf-rated').hidden = true;
+        return;
+      }
+
+      // أحدث 10: ترتيب حقيقي بتاريخ الإضافة (sort ثابت، فلو مفيش تاريخ يفضل ترتيب الـ API)
+      const latest = pool.slice().sort((a, b) => createdTime(b) - createdTime(a)).slice(0, N);
+      prodContainer.innerHTML = latest.map(App.productCard).join('');
+      revealCards(prodContainer);
+
+      // الخصومات: المنتجات اللي عليها خصم فعلي بس، الأعلى خصماً أولاً
+      const discounted = pool.filter(p => discountPct(p) > 0)
+        .sort((a, b) => discountPct(b) - discountPct(a)).slice(0, N);
+      fillShelf('shelf-discounts', 'discounts-grid', discounted);
+
+      // أعلى التقييمات: المنتجات اللي لها تقييمات فعلية فقط.
+      // الترتيب بمتوسط موزون عشان منتج بتقييم واحد 5★ ما يتفوقش على منتج بـ 50 تقييم 4.8★
+      const rated = pool.filter(p => ratingOf(p) > 0 && reviewsOf(p) > 0);
+      if (rated.length) {
+        const m = 3;
+        const C = rated.reduce((s, p) => s + ratingOf(p), 0) / rated.length;
+        const score = p => { const v = reviewsOf(p); return (v * ratingOf(p) + m * C) / (v + m); };
+        rated.sort((a, b) => score(b) - score(a) || reviewsOf(b) - reviewsOf(a));
+      }
+      fillShelf('shelf-rated', 'rated-grid', rated.slice(0, N));
+
+      // للتشخيص: افتح Console لو رف التقييمات مش ظاهر
+      console.debug('[home] sample product:', pool[0]);
+      console.debug('[home] rated products:', rated.length);
+    }
+
+    window.addEventListener('DOMContentLoaded', loadHomeData);
+    window.addEventListener('market:new_product', () => loadHomeData());
+  </script>
+</body>
+</html>
