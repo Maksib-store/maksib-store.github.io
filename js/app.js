@@ -599,7 +599,7 @@
         else if (response.status === 403) msg = 'ليس لديك الصلاحية الكافية للقيام بهذا الإجراء';
         return { ok: false, status: response.status, message: msg, data: data.data || null };
       }
-      return { ok: true, status: response.status, data: data.data, message: data.message, pagination: data.pagination, raw: data };
+      return { ok: true, status: response.status, data: data.data !== undefined ? data.data : (issued ? data : undefined), message: data.message, pagination: data.pagination, raw: data };
     } catch (err) {
       if (err && err.name === 'AbortError') return { ok: false, status: 0, aborted: true, message: 'تم إلغاء الطلب' };
       return { ok: false, status: 0, message: 'تعذر الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت.' };
