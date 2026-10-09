@@ -20,7 +20,7 @@
   var SERVER_CONFIG = {
     servers: [
       'https://maksib.up.railway.app',
-      'https://YOUR-SECOND-SERVER.up.railway.app', // ← حط رابط السيرفر التاني هنا (ضيف أكتر من سطر لو عندك أكتر)
+      'https://70qgl61o0ymm-production-qr391fha.europe-west1.suga.run', // ← حط رابط السيرفر التاني هنا (ضيف أكتر من سطر لو عندك أكتر)
     ],
     healthPath: '/healthy',
     healthTimeoutMs: 3000,          // أقصى انتظار لفحص /healthy
