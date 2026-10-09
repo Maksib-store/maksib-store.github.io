@@ -10,15 +10,182 @@
   'use strict';
 
   // ---------------------------------------------------------------------------
-  // 0. Server config — غيّر رابط السيرفر من هنا فقط (بدون / في النهاية)
+  // 0. Server pool — تبديل تلقائي بين السيرفرات (Failover)
+  //
+  //   • ضيف أي عدد من السيرفرات في SERVERS (الترتيب = الأولوية). بدون / في النهاية.
+  //   • كل سيرفر لازم يرد على GET /healthy (200 = سليم، 503 = واقع/مزدحم).
+  //   • الفرونت بيفضل على نفس السيرفر (عشان الكوكيز/تسجيل الدخول) وبيتحول للي بعده
+  //     لما السيرفر يقع أو يتأخر أو يرد 502/503/504 أو /healthy يقول إنه مزدحم.
   // ---------------------------------------------------------------------------
-  var API_BASE_URL = 'https://maksib.up.railway.app';
+  var SERVER_CONFIG = {
+    servers: [
+      'https://maksib.up.railway.app',
+      'https://YOUR-SECOND-SERVER.up.railway.app', // ← حط رابط السيرفر التاني هنا (ضيف أكتر من سطر لو عندك أكتر)
+    ],
+    healthPath: '/healthy',
+    healthTimeoutMs: 3000,          // أقصى انتظار لفحص /healthy
+    requestTimeoutMs: 20000,        // أقصى انتظار لطلب GET قبل اعتبار السيرفر واقع
+    writeTimeoutMs: 60000,          // أقصى انتظار لطلبات POST/PUT/DELETE (بدون إعادة محاولة)
+    cooldownMs: 30000,              // السيرفر الواقع بيتتجاهل المدة دي قبل ما نجربه تاني
+    recheckIntervalMs: 30000,       // فحص دوري للسيرفر الحالي في الخلفية
+    stickyTtlMs: 15 * 60 * 1000,    // بعد المدة دي نرجع لترتيب الأولوية (يرجّعك للسيرفر الأساسي لو اتصلح)
+    distribute: 'priority',         // 'priority' = دايماً الأول أولاً · 'random' = توزيع الزوار الجدد عشوائي
+    storageKey: 'maksib_active_server',
+  };
 
-  /** يحوّل مسار مثل /api/xxx إلى رابط كامل على السيرفر. الروابط الكاملة (http/https) تبقى كما هي. */
+  var ServerPool = (function () {
+    var cfg = SERVER_CONFIG;
+    var list = cfg.servers
+      .filter(function (u) { return u && !/YOUR-/i.test(u); })
+      .map(function (u) { return String(u).replace(/\/+$/, ''); })
+      .filter(function (u, i, a) { return a.indexOf(u) === i; });
+    if (!list.length) list = [String(cfg.servers[0]).replace(/\/+$/, '')];
+
+    var down = {};          // url -> timestamp لحد إمتى متجاهَل
+    var active = null;
+    var verifying = false;
+
+    function now() { return Date.now(); }
+    function isDown(u) { return (down[u] || 0) > now(); }
+
+    function load() {
+      try {
+        var raw = JSON.parse(localStorage.getItem(cfg.storageKey) || 'null');
+        if (raw && list.indexOf(raw.url) !== -1 && now() - raw.t < cfg.stickyTtlMs) return raw.url;
+      } catch (e) { /* storage unavailable */ }
+      return null;
+    }
+    function save(u) {
+      try { localStorage.setItem(cfg.storageKey, JSON.stringify({ url: u, t: now() })); } catch (e) { /* ignore */ }
+    }
+
+    active = load() || (cfg.distribute === 'random' ? list[Math.floor(Math.random() * list.length)] : list[0]);
+
+    function setActive(u, reason) {
+      if (u === active) return;
+      var from = active;
+      active = u;
+      save(u);
+      console.warn('[servers] switched ' + from + ' → ' + u + (reason ? ' (' + reason + ')' : ''));
+      try { window.dispatchEvent(new CustomEvent('market:server_changed', { detail: { from: from, to: u, reason: reason } })); } catch (e) { /* ignore */ }
+    }
+
+    /** السيرفر اللي بعد `from` في الدائرة ومش واقع. null لو مفيش. */
+    function nextAfter(from) {
+      var i = list.indexOf(from);
+      for (var k = 1; k < list.length; k++) {
+        var cand = list[(i + k) % list.length];
+        if (!isDown(cand)) return cand;
+      }
+      return null;
+    }
+
+    /** فحص /healthy. بترجع true فقط لو الرد 200 و status === 'ok'. */
+    function probe(u) {
+      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, cfg.healthTimeoutMs) : null;
+      return fetch(u + cfg.healthPath, { cache: 'no-store', credentials: 'omit', signal: ctrl ? ctrl.signal : undefined })
+        .then(function (r) { return r.ok ? r.json().catch(function () { return { status: 'ok' }; }) : null; })
+        .then(function (d) { return !!d && (d.status === undefined || d.status === 'ok'); })
+        .catch(function () { return false; })
+        .then(function (ok) { if (timer) clearTimeout(timer); return ok; });
+    }
+
+    /** سجّل إن السيرفر ده وقع، وحوّل للي بعده لو هو الحالي. */
+    function reportFailure(u, reason) {
+      down[u] = now() + cfg.cooldownMs;
+      if (u === active) {
+        var nxt = nextAfter(u);
+        if (nxt) { setActive(nxt, reason || 'failure'); verifyActive(); }
+      }
+    }
+
+    /** اتأكد إن السيرفر الحالي سليم فعلاً؛ لو لا كمّل للي بعده. */
+    function verifyActive() {
+      if (verifying) return Promise.resolve(active);
+      verifying = true;
+      var target = active;
+      return probe(target).then(function (ok) {
+        verifying = false;
+        if (active !== target) return active;
+        if (ok) { delete down[target]; return active; }
+        reportFailure(target, 'health-check');
+        return active;
+      });
+    }
+
+    // فحص دوري + عند رجوع التاب/الإنترنت
+    if (list.length > 1) {
+      setInterval(function () { if (!document.hidden) verifyActive(); }, cfg.recheckIntervalMs);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) verifyActive(); });
+      window.addEventListener('online', function () { verifyActive(); });
+    }
+
+    return {
+      list: list,
+      current: function () { return active; },
+      hasAlternative: function () { return nextAfter(active) !== null; },
+      reportFailure: reportFailure,
+      verify: verifyActive,
+      /** للاختبار من الـ Console: await App.servers.status() */
+      status: function () {
+        return Promise.all(list.map(function (u) {
+          var t0 = now();
+          return probe(u).then(function (ok) { return { url: u, healthy: ok, ms: now() - t0, active: u === active, cooling_down: isDown(u) }; });
+        }));
+      },
+    };
+  })();
+
+  /** يحوّل مسار مثل /api/xxx إلى رابط كامل على السيرفر الحالي. الروابط الكاملة (http/https) تبقى كما هي. */
   function apiUrl(path) {
     path = String(path || '');
     if (/^https?:\/\//i.test(path)) return path;
-    return API_BASE_URL.replace(/\/+$/, '') + (path.charAt(0) === '/' ? path : '/' + path);
+    return ServerPool.current() + (path.charAt(0) === '/' ? path : '/' + path);
+  }
+
+  var RETRY_STATUSES = { 502: true, 503: true, 504: true };
+
+  /**
+   * fetch مع Failover:
+   *  - GET/HEAD: لو السيرفر وقع/تأخر/رد 502-504 يجرب السيرفر اللي بعده تلقائياً.
+   *  - POST/PUT/DELETE: بيعيد المحاولة فقط على 502/503 (الطلب ماوصلش للتطبيق) عشان مانكرّرش
+   *    طلب اتنفذ (زي إنشاء طلب شراء مرتين). لو اتقطع الاتصال بيحوّل للسيرفر التاني للطلب الجاي.
+   */
+  async function fetchWithFailover(path, config) {
+    path = String(path || '');
+    if (/^https?:\/\//i.test(path)) return fetch(path, config);
+
+    var method = String(config.method || 'GET').toUpperCase();
+    var safe = method === 'GET' || method === 'HEAD';
+    var timeout = safe ? SERVER_CONFIG.requestTimeoutMs : SERVER_CONFIG.writeTimeoutMs;
+    var lastRes = null, lastErr = null;
+
+    for (var attempt = 0; attempt < ServerPool.list.length; attempt++) {
+      var base = ServerPool.current();
+      var ctrl = typeof AbortController !== 'undefined' && !config.signal ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeout) : null;
+      try {
+        var res = await fetch(base + (path.charAt(0) === '/' ? path : '/' + path),
+          ctrl ? Object.assign({}, config, { signal: ctrl.signal }) : config);
+        if (timer) clearTimeout(timer);
+
+        var retryable = safe ? RETRY_STATUSES[res.status] : (res.status === 502 || res.status === 503);
+        if (!retryable) return res;
+
+        lastRes = res;
+        ServerPool.reportFailure(base, 'http-' + res.status);
+        if (ServerPool.current() === base) return res; // مفيش بديل
+      } catch (err) {
+        if (timer) clearTimeout(timer);
+        lastErr = err;
+        var timedOut = err && err.name === 'AbortError';
+        if (!timedOut || safe) ServerPool.reportFailure(base, timedOut ? 'timeout' : 'network');
+        if (!safe || ServerPool.current() === base) break;
+      }
+    }
+    if (lastRes) return lastRes;
+    throw lastErr || new Error('network');
   }
 
   var FALLBACK_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -120,7 +287,7 @@
     });
 
     try {
-      var response = await fetch(apiUrl(url), config);
+      var response = await fetchWithFailover(url, config);
       var data = await response.json().catch(function () { return {}; });
 
       if (!response.ok) {
@@ -546,38 +713,57 @@
   // ---------------------------------------------------------------------------
   function initSocket(user) {
     if (typeof io === 'undefined') return;
-    try {
-      var socket = io(API_BASE_URL, { transports: ['websocket'], withCredentials: true });
-      socket.on('connect', function () {
-        socket.emit('join_users');
-        if (user && (user.role === 'super_admin' || user.role === 'admin')) socket.emit('join_admin');
-      });
+    var socket = null, socketBase = null, fails = 0;
 
-      var relay = function (evt) {
-        return function (data) { window.dispatchEvent(new CustomEvent('market:' + evt, { detail: data })); };
-      };
-      socket.on('new_product', function (d) {
-        showToast('منتج جديد: ' + ((d && d.name) || 'تمت إضافة منتج مكسب جديد'), 'info');
-        relay('new_product')(d);
-      });
-      socket.on('new_section', function (d) {
-        showToast('قسم جديد: ' + ((d && d.name) || 'تمت إضافة قسم جديد'), 'info');
-        relay('new_section')(d);
-      });
-      socket.on('update_status', function (d) {
-        showToast('تم تحديث حالة أحد الطلبات', 'info');
-        relay('update_status')(d);
-      });
-      socket.on('new_order', function (d) {
-        showToast('طلب شراء جديد تم تسجيله في المنصة', 'warning');
-        relay('new_order')(d);
-      });
-      ['deleted_product', 'deleted_section', 'upgrade_user', 'update_user', 'deleted_order'].forEach(function (evt) {
-        socket.on(evt, relay(evt));
-      });
-    } catch (err) {
-      console.warn('Socket.IO connection skipped:', err);
+    function relay(evt) {
+      return function (data) { window.dispatchEvent(new CustomEvent('market:' + evt, { detail: data })); };
     }
+
+    function open() {
+      try {
+        if (socket) { socket.removeAllListeners(); socket.close(); }
+        socketBase = ServerPool.current();
+        fails = 0;
+        socket = io(socketBase, { transports: ['websocket'], withCredentials: true, reconnectionDelayMax: 5000 });
+
+        socket.on('connect', function () {
+          fails = 0;
+          socket.emit('join_users');
+          if (user && (user.role === 'super_admin' || user.role === 'admin')) socket.emit('join_admin');
+        });
+        // بعد محاولتين فاشلتين نعتبر السيرفر واقع ونتحول للي بعده (الحدث market:server_changed بيعيد فتح الـ socket)
+        socket.on('connect_error', function () {
+          if (++fails >= 2) { fails = 0; ServerPool.reportFailure(socketBase, 'socket'); }
+        });
+
+        socket.on('new_product', function (d) {
+          showToast('منتج جديد: ' + ((d && d.name) || 'تمت إضافة منتج مكسب جديد'), 'info');
+          relay('new_product')(d);
+        });
+        socket.on('new_section', function (d) {
+          showToast('قسم جديد: ' + ((d && d.name) || 'تمت إضافة قسم جديد'), 'info');
+          relay('new_section')(d);
+        });
+        socket.on('update_status', function (d) {
+          showToast('تم تحديث حالة أحد الطلبات', 'info');
+          relay('update_status')(d);
+        });
+        socket.on('new_order', function (d) {
+          showToast('طلب شراء جديد تم تسجيله في المنصة', 'warning');
+          relay('new_order')(d);
+        });
+        ['deleted_product', 'deleted_section', 'upgrade_user', 'update_user', 'deleted_order'].forEach(function (evt) {
+          socket.on(evt, relay(evt));
+        });
+      } catch (err) {
+        console.warn('Socket.IO connection skipped:', err);
+      }
+    }
+
+    open();
+    window.addEventListener('market:server_changed', function () {
+      if (socketBase !== ServerPool.current()) open();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -770,7 +956,7 @@
     showToast: showToast,
     fetchAPI: fetchAPI,
     apiUrl: apiUrl,
-    API_BASE_URL: API_BASE_URL,
+    servers: ServerPool,
     safeDecode: safeDecode,
     imgFallback: imgFallback,
     FALLBACK_IMG: FALLBACK_IMG,
@@ -779,6 +965,8 @@
     shell: shell,
     init: init,
   };
+
+  Object.defineProperty(window.App, 'API_BASE_URL', { get: function () { return ServerPool.current(); } });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
