@@ -31,6 +31,7 @@
     stickyTtlMs: 15 * 60 * 1000,    // بعد المدة دي نرجع لترتيب الأولوية (يرجّعك للسيرفر الأساسي لو اتصلح)
     distribute: 'priority',         // 'priority' = دايماً الأول أولاً · 'random' = توزيع الزوار الجدد عشوائي
     storageKey: 'maksib_active_server',
+    logRequests: false,             // true = اطبع في الكونسول السيرفر المستخدم لكل طلب API
   };
 
   var ServerPool = (function () {
@@ -144,6 +145,25 @@
     return ServerPool.current() + (path.charAt(0) === '/' ? path : '/' + path);
   }
 
+  /** يطبع في الكونسول السيرفر الشغال حالياً. */
+  function logActiveServer(reason) {
+    var cur = ServerPool.current();
+    var idx = ServerPool.list.indexOf(cur) + 1;
+    console.log(
+      '%c[servers]%c السيرفر الحالي: %c' + cur + '%c  (#' + idx + ' من ' + ServerPool.list.length + ')' +
+      (reason ? '  — ' + reason : ''),
+      'background:#111;color:#fff;padding:2px 6px;border-radius:3px;',
+      'color:inherit;',
+      'color:#16a34a;font-weight:bold;',
+      'color:#6b7280;'
+    );
+  }
+
+  window.addEventListener('market:server_changed', function (e) {
+    var d = (e && e.detail) || {};
+    logActiveServer('تم التبديل من ' + d.from + ' بسبب: ' + (d.reason || 'غير معروف'));
+  });
+
   var RETRY_STATUSES = { 502: true, 503: true, 504: true };
 
   /**
@@ -154,19 +174,25 @@
    */
   async function fetchWithFailover(path, config) {
     path = String(path || '');
+    config = config || {};
     if (/^https?:\/\//i.test(path)) return fetch(path, config);
 
     var method = String(config.method || 'GET').toUpperCase();
     var safe = method === 'GET' || method === 'HEAD';
     var timeout = safe ? SERVER_CONFIG.requestTimeoutMs : SERVER_CONFIG.writeTimeoutMs;
+    var fullPath = path.charAt(0) === '/' ? path : '/' + path;
     var lastRes = null, lastErr = null;
 
     for (var attempt = 0; attempt < ServerPool.list.length; attempt++) {
       var base = ServerPool.current();
-      var ctrl = typeof AbortController !== 'undefined' && !config.signal ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeout) : null;
+      var ctrl = (typeof AbortController !== 'undefined' && !config.signal) ? new AbortController() : null;
+      var timer = null;
+      if (ctrl) {
+        timer = setTimeout((function (c) { return function () { c.abort(); }; })(ctrl), timeout);
+      }
+      if (SERVER_CONFIG.logRequests) console.debug('[api]', method, base + fullPath);
       try {
-        var res = await fetch(base + (path.charAt(0) === '/' ? path : '/' + path),
+        var res = await fetch(base + fullPath,
           ctrl ? Object.assign({}, config, { signal: ctrl.signal }) : config);
         if (timer) clearTimeout(timer);
 
@@ -179,7 +205,7 @@
       } catch (err) {
         if (timer) clearTimeout(timer);
         lastErr = err;
-        var timedOut = err && err.name === 'AbortError';
+        var timedOut = !!err && err.name === 'AbortError';
         if (!timedOut || safe) ServerPool.reportFailure(base, timedOut ? 'timeout' : 'network');
         if (!safe || ServerPool.current() === base) break;
       }
@@ -280,6 +306,7 @@
   // ---------------------------------------------------------------------------
   async function fetchAPI(url, options) {
     options = options || {};
+    url = String(url || '');
     var headers = {};
     if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
     var config = Object.assign({ credentials: 'include' }, options, {
@@ -728,6 +755,8 @@
 
         socket.on('connect', function () {
           fails = 0;
+          console.log('%c[socket]%c متصل بالسيرفر: ' + socketBase,
+            'background:#111;color:#fff;padding:2px 6px;border-radius:3px;', 'color:#16a34a;font-weight:bold;');
           socket.emit('join_users');
           if (user && (user.role === 'super_admin' || user.role === 'admin')) socket.emit('join_admin');
         });
@@ -843,20 +872,26 @@
       if (quick) quick.style.display = 'none';
 
       var typing = this.addTyping();
-      var res = await fetchAPI('/api/ai_assistant', {
-        method: 'POST',
-        body: JSON.stringify({ message: text, history: this.history.slice(-8) }),
-      });
-      typing.remove();
+      try {
+        var res = await fetchAPI('/api/ai_assistant', {
+          method: 'POST',
+          body: JSON.stringify({ message: text, history: this.history.slice(-8) }),
+        });
+        typing.remove();
 
-      if (res.ok && res.data) {
-        var reply = res.data.reply || 'شكراً لسؤالك! تصفح المنتجات في المتجر لتجد ما يناسبك.';
-        this.history.push({ role: 'user', content: text }, { role: 'assistant', content: reply });
-        this.addMessage('assistant', reply, res.data.products || []);
-      } else {
+        if (res.ok && res.data) {
+          var reply = res.data.reply || 'شكراً لسؤالك! تصفح المنتجات في المتجر لتجد ما يناسبك.';
+          this.history.push({ role: 'user', content: text }, { role: 'assistant', content: reply });
+          this.addMessage('assistant', reply, res.data.products || []);
+        } else {
+          this.addMessage('assistant', 'عذراً، تعذر الرد الآن. يمكنك تصفح المنتجات يدوياً أو المحاولة بعد قليل.');
+        }
+      } catch (err) {
+        typing.remove();
         this.addMessage('assistant', 'عذراً، تعذر الرد الآن. يمكنك تصفح المنتجات يدوياً أو المحاولة بعد قليل.');
+      } finally {
+        this.busy = false;
       }
-      this.busy = false;
     },
 
     addTyping: function () {
@@ -932,7 +967,7 @@
   document.addEventListener('mousedown', function (e) {
     var a = e.target.closest('[data-card-link]');
     if (a && _cardProducts[a.dataset.cardLink]) {
-      try { sessionStorage.setItem('current_product', JSON.stringify(_cardProducts[a.dataset.cardLink])); } catch (err) {}
+      try { sessionStorage.setItem('current_product', JSON.stringify(_cardProducts[a.dataset.cardLink])); } catch (err) { /* ignore */ }
     }
   });
 
@@ -940,6 +975,7 @@
   // 9. Init
   // ---------------------------------------------------------------------------
   async function init() {
+    logActiveServer('عند تحميل الصفحة');
     shell.render();
     cart.updateBadges();
     aiChatbot.init();
@@ -957,6 +993,7 @@
     fetchAPI: fetchAPI,
     apiUrl: apiUrl,
     servers: ServerPool,
+    logServer: logActiveServer,
     safeDecode: safeDecode,
     imgFallback: imgFallback,
     FALLBACK_IMG: FALLBACK_IMG,
