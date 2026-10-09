@@ -45,6 +45,10 @@
     .admin-tab-pane.active {
       display: block;
     }
+    .status-badge.shipped {
+      background: #e8f1fb;
+      color: #1d5fa8;
+    }
   </style>
 </head>
 <body>
@@ -74,6 +78,9 @@
       </button>
       <button class="admin-tab-btn" data-tab="tab-sections">
         <i class="fa-solid fa-folder-tree"></i> إدارة الأقسام (<span id="count-sections">0</span>)
+      </button>
+      <button class="admin-tab-btn" data-tab="tab-orders">
+        <i class="fa-solid fa-receipt"></i> جميع الطلبات (<span id="count-orders">0</span>)
       </button>
     </div>
 
@@ -192,6 +199,62 @@
 
       </div>
     </div>
+    <!-- TAB 3: All Orders (read only) -->
+    <div class="admin-tab-pane" id="tab-orders">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <h3 style="font-size:16px; font-weight:700; margin:0;">كل طلبات المنصة</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <input type="text" id="orders-search-input" class="input" placeholder="رقم الطلب أو اسم العميل..." style="height:36px; width:220px;">
+            <select id="orders-status-filter" class="input" style="height:36px; width:150px;">
+              <option value="">كل الحالات</option>
+              <option value="new">جديد</option>
+              <option value="processing">قيد التجهيز</option>
+              <option value="shipped">تم الشحن</option>
+              <option value="delivered">تم التسليم</option>
+              <option value="cancelled">ملغي</option>
+            </select>
+            <button class="button btn-secondary btn-sm" onclick="applyOrdersFilters()">
+              <i class="fa-solid fa-magnifying-glass"></i> بحث
+            </button>
+            <button class="button btn-secondary btn-sm" onclick="loadAllOrders()">
+              <i class="fa-solid fa-rotate"></i> تحديث
+            </button>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="invoice-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>رقم الطلب</th>
+                <th>المتجر (الاسم / ID)</th>
+                <th>العميل</th>
+                <th>المنتجات</th>
+                <th>الإجمالي</th>
+                <th>الحالة</th>
+                <th>التاريخ</th>
+              </tr>
+            </thead>
+            <tbody id="orders-tbody">
+              <tr>
+                <td colspan="7" style="text-align:center; padding:24px; color:var(--text-secondary);">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ تحميل الطلبات...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="padding:12px 20px; border-top:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span id="orders-page-info" style="font-size:13px; color:var(--text-secondary);"></span>
+          <div style="display:flex; gap:8px;">
+            <button class="button btn-secondary btn-sm" id="orders-prev-btn" onclick="changeOrdersPage(-1)">السابق</button>
+            <button class="button btn-secondary btn-sm" id="orders-next-btn" onclick="changeOrdersPage(1)">التالي</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Footer -->
@@ -222,6 +285,7 @@
       await loadPromotionRequests();
       await loadAllUsers();
       await loadSections();
+      await loadAllOrders();
     }
 
     // --- 1. Promotion Requests ---
@@ -418,6 +482,102 @@
           </tr>
         `).join('');
       }
+    }
+
+    // --- 4. All Orders (read only) ---
+    const ORDER_STATUS_LABELS = {
+      new: 'جديد',
+      processing: 'قيد التجهيز',
+      shipped: 'تم الشحن',
+      delivered: 'تم التسليم',
+      cancelled: 'ملغي',
+    };
+    const ORDERS_PAGE_SIZE = 20;
+    let ordersState = { page: 1, status: '', search: '', totalPages: 1 };
+
+    function applyOrdersFilters() {
+      ordersState.status = document.getElementById('orders-status-filter').value;
+      ordersState.search = document.getElementById('orders-search-input').value.trim();
+      ordersState.page = 1;
+      loadAllOrders();
+    }
+
+    function changeOrdersPage(delta) {
+      const next = ordersState.page + delta;
+      if (next < 1 || next > ordersState.totalPages) return;
+      ordersState.page = next;
+      loadAllOrders();
+    }
+
+    function renderOrderStores(stores) {
+      if (!Array.isArray(stores) || !stores.length) return '<span style="color:var(--text-secondary);">-</span>';
+      return stores.map(s => {
+        const id = s._id || s.seller_id || '';
+        const name = s.store_name || 'متجر غير مسجل';
+        return `
+          <div style="margin-bottom:4px;">
+            <div style="font-weight:700;">${App.escapeHtml(name)}</div>
+            <code style="font-size:11px;">${App.escapeHtml(id)}</code>
+          </div>`;
+      }).join('');
+    }
+
+    async function loadAllOrders() {
+      const tbody = document.getElementById('orders-tbody');
+      const params = new URLSearchParams({ page: ordersState.page, limit: ORDERS_PAGE_SIZE });
+      if (ordersState.status) params.set('status', ordersState.status);
+      if (ordersState.search) params.set('search', ordersState.search);
+
+      const res = await App.fetchAPI('/api/admin/orders?' + params.toString());
+
+      if (!(res.ok && Array.isArray(res.data))) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align:center; color:var(--text-secondary); padding:24px;">
+              ${App.escapeHtml(res.message || 'تعذر جلب الطلبات.')}
+            </td>
+          </tr>`;
+        return;
+      }
+
+      const pg = res.pagination || { page: 1, totalPages: 1, total: res.data.length };
+      ordersState.totalPages = Math.max(pg.totalPages || 1, 1);
+      document.getElementById('count-orders').innerText = pg.total || 0;
+      document.getElementById('orders-page-info').innerText = `صفحة ${pg.page} من ${ordersState.totalPages}`;
+      document.getElementById('orders-prev-btn').disabled = !pg.hasPreviousPage;
+      document.getElementById('orders-next-btn').disabled = !pg.hasNextPage;
+
+      if (!res.data.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align:center; color:var(--text-secondary); padding:24px;">
+              لا توجد طلبات مطابقة.
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tbody.innerHTML = res.data.map(o => {
+        const status = o.status || 'new';
+        const items = (o.products || []).map(p =>
+          `<div>${App.escapeHtml(p.name)} <span style="color:var(--text-secondary);">× ${App.escapeHtml(p.quantity)}</span></div>`
+        ).join('');
+        return `
+          <tr>
+            <td><code>${App.escapeHtml(o.orderNumber)}</code></td>
+            <td style="font-size:13px;">${renderOrderStores(o.stores)}</td>
+            <td style="font-size:13px;">
+              <div style="font-weight:700;">${App.escapeHtml(o.user_name)}</div>
+              <div>${App.escapeHtml(o.phone_number || '-')}</div>
+            </td>
+            <td style="font-size:12px; max-width:220px;">${items || '-'}</td>
+            <td style="font-weight:700;">${App.formatPrice(o.total_price)}</td>
+            <td><span class="status-badge ${App.escapeHtml(status)}">${App.escapeHtml(ORDER_STATUS_LABELS[status] || status)}</span></td>
+            <td style="font-size:12px; color:var(--text-secondary);">
+              ${o.createdAt ? new Date(o.createdAt).toLocaleString('ar-EG') : '-'}
+            </td>
+          </tr>`;
+      }).join('');
     }
 
     window.addEventListener('DOMContentLoaded', initAdminDashboard);
