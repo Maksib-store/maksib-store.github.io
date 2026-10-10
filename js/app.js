@@ -27,7 +27,8 @@
     servers: [
       'https://maksib.up.railway.app',
       'https://70qgl61o0ymm-production-qr391fha.europe-west1.suga.run',
-      'https://x9sdfeu0k9ld-production-4pbmlhys.us-central1.suga.run',// ← ضيف أي سيرفر إضافي هنا
+      'https://x9sdfeu0k9ld-production-4pbmlhys.us-central1.suga.run',
+      'https://0qglaye1nauq-production-pckvh4ha.europe-west1.suga.run'// ← ضيف أي سيرفر إضافي هنا
     ],
     healthPath: '/healthy',
     healthTimeoutMs: 3000,          // أقصى انتظار لفحص /healthy
