@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>لوحة البائع | متجر مكسب</title>
+  <meta name="description" content="أدر المنتجات والمخزون وطلبات البيع من لوحة البائع في متجر مكسب.">
+  <meta property="og:site_name" content="متجر مكسب">
+  <meta property="og:title" content="لوحة البائع | متجر مكسب">
+  <meta property="og:description" content="أدر المنتجات والمخزون وطلبات البيع من لوحة البائع في متجر مكسب.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="لوحة البائع | متجر مكسب">
+  <meta name="twitter:description" content="أدر المنتجات والمخزون وطلبات البيع من لوحة البائع في متجر مكسب.">
+  <meta name="twitter:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <style>
+    .seller-tab-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 24px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .seller-tab-btn {
+      padding: 10px 18px;
+      font-weight: 700;
+      font-size: 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: all 150ms ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .seller-tab-btn:hover {
+      color: var(--text-primary);
+    }
+    .seller-tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--accent);
+    }
+    .seller-tab-pane {
+      display: none;
+    }
+    .seller-tab-pane.active {
+      display: block;
+    }
+    .upload-preview-grid {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .upload-thumb-item {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      overflow: hidden;
+      background: #fff;
+    }
+    .upload-thumb-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .upload-thumb-delete {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: var(--error);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  </head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- Seller Dashboard Main -->
+  <main class="container" style="padding-top: var(--space-20); padding-bottom: var(--space-48);">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px;">
+      <div>
+        <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 4px;">لوحة إدارة متجر البائع (Seller Central)</h1>
+        <p style="color: var(--text-secondary); font-size: 14px; margin: 0;">
+          تحكم كامل في معروضاتك المكسبة، المخزون، ومتابعة حالات الشحن والتوصيل للعملاء.
+        </p>
+      </div>
+      <div>
+        <span class="badge badge-certified" style="font-size: 13px; padding: 6px 12px;">
+          <i class="fa-solid fa-circle-check"></i> بائع معتمد ونشط
+        </span>
+      </div>
+    </div>
+
+    <!-- Tabs Navigation -->
+    <div class="seller-tab-nav">
+      <button class="seller-tab-btn" data-tab="tab-store">
+        <i class="fa-solid fa-store"></i> متجري
+      </button>
+      <button class="seller-tab-btn active" data-tab="tab-products">
+        <i class="fa-solid fa-box-archive"></i> منتجاتي المعروضة (<span id="count-seller-prods">0</span>)
+      </button>
+      <button class="seller-tab-btn" data-tab="tab-add-product">
+        <i class="fa-solid fa-circle-plus"></i> إضافة سلعة مكسبة جديدة
+      </button>
+      <button class="seller-tab-btn" data-tab="tab-orders">
+        <i class="fa-solid fa-clipboard-list"></i> طلبيات الزبائن (<span id="count-seller-orders">0</span>)
+      </button>
+      <button class="seller-tab-btn" data-tab="tab-coupons">
+        <i class="fa-solid fa-ticket"></i> كوبوناتي (<span id="count-seller-coupons">0</span>)
+      </button>
+      <button class="seller-tab-btn" data-tab="tab-tickets">
+        <i class="fa-solid fa-headset"></i> مركز حل المشاكل (<span id="count-seller-tickets">0</span>)
+      </button>
+    </div>
+
+    <!-- TAB 0: My Store (create / view / edit - only ever the logged-in seller's own store) -->
+    <div class="seller-tab-pane" id="tab-store">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:28px; max-width:800px; margin:0 auto;">
+        <h2 id="store-form-title" style="font-size:20px; font-weight:800; margin-bottom:6px;">بيانات متجري</h2>
+        <p id="store-form-hint" style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">
+          جارٍ تحميل بيانات المتجر...
+        </p>
+
+        <form id="form-store">
+          <div class="field">
+            <label for="store-name">اسم المتجر</label>
+            <input type="text" id="store-name" class="input" maxlength="120" placeholder="مثال: معرض الأمين للأجهزة المكسبة" required>
+          </div>
+
+          <div class="field">
+            <label for="store-description">وصف المتجر</label>
+            <textarea id="store-description" class="input" maxlength="1000" placeholder="عرّف المشترين بمتجرك ونوع السلع التي تبيعها..."></textarea>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="field">
+              <label for="store-phone">هاتف المتجر</label>
+              <input type="tel" id="store-phone" class="input" maxlength="40" placeholder="01xxxxxxxxx">
+            </div>
+            <div class="field">
+              <label for="store-whatsapp">واتساب المتجر</label>
+              <input type="tel" id="store-whatsapp" class="input" maxlength="40" placeholder="01xxxxxxxxx">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="store-gps">موقع المتجر (رابط خرائط جوجل)</label>
+            <input type="url" id="store-gps" class="input" maxlength="500" placeholder="https://maps.google.com/...">
+          </div>
+
+          <button type="submit" id="btn-save-store" class="button btn-accent btn-block" style="height:44px; font-size:15px;">
+            إنشاء المتجر
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- TAB 1: My Products -->
+    <div class="seller-tab-pane active" id="tab-products">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; font-weight:700;">قائمة المعروضات الحالية في المتجر</h3>
+          <button class="button btn-secondary btn-sm" onclick="loadSellerProducts()">
+            <i class="fa-solid fa-rotate"></i> تحديث
+          </button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="invoice-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>صورة السلعة</th>
+                <th>اسم المنتج</th>
+                <th>القسم</th>
+                <th>السعر الأصلي</th>
+                <th>الخصم</th>
+                <th>السعر النهائي</th>
+                <th>الكمية المتاحة</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="seller-products-table-body">
+              <tr>
+                <td colspan="8" style="text-align:center; padding:32px; color:var(--text-secondary);">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ تحميل منتجاتك...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Add / Edit Product -->
+    <div class="seller-tab-pane" id="tab-add-product">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:28px; max-width:800px; margin:0 auto;">
+        <h2 id="form-product-title" style="font-size:20px; font-weight:800; margin-bottom:6px;">إضافة سلعة مكسبة جديدة</h2>
+        <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">
+          أدخل بيانات السلعة بدقة، وارفع صوراً حقيقية لزيادة ثقة المشترين وسرعة البيع.
+        </p>
+
+        <form id="form-add-product">
+          <div class="field">
+            <label for="add-prod-name">اسم السلعة المكسبة</label>
+            <input type="text" id="add-prod-name" class="input" placeholder="مثال: لابتوب ديل كور i7 الجيل 11 بحالة ممتازة" required>
+          </div>
+
+          <div class="field">
+            <label for="add-prod-desc">الوصف التفصيلي، حالة الاستخدام، والملحقات</label>
+            <textarea id="add-prod-desc" class="input" placeholder="وضح مدة الاستخدام، حالة البطارية، وجود أي خدوش، الملحقات والعلبة الأصلية..." required></textarea>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="field">
+              <label for="add-prod-price">السعر المطلوب (ج.م)</label>
+              <input type="number" id="add-prod-price" class="input" min="1" step="0.01" placeholder="1500" required>
+            </div>
+
+            <div class="field">
+              <label for="add-prod-discount">نسبة الخصم إن وجد (%)</label>
+              <input type="number" id="add-prod-discount" class="input" min="0" max="100" value="0">
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="field">
+              <label for="add-prod-qty">الكمية المتوفرة</label>
+              <input type="number" id="add-prod-qty" class="input" min="1" value="1" required>
+            </div>
+
+            <div class="field">
+              <label for="add-prod-section">القسم / التصنيف</label>
+              <select id="add-prod-section" class="input" required>
+                <option value="">اختر القسم المناسب</option>
+              </select>
+              <a href="#" id="toggle-new-section" style="display:inline-block; margin-top:6px; font-size:12px; color:var(--link); font-weight:700;">
+                <i class="fa-solid fa-plus"></i> لم تجد القسم؟ أضف قسماً جديداً
+              </a>
+              <div id="new-section-box" style="display:none; margin-top:8px;">
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="new-section-name" class="input" maxlength="50" placeholder="اسم القسم الجديد">
+                  <button type="button" id="btn-add-section" class="button btn-secondary btn-sm">إضافة</button>
+                </div>
+                <div id="new-section-msg" style="display:none; margin-top:8px; font-size:12px; line-height:1.7; color:var(--error);"></div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:6px;">
+                  يمكنك إضافة قسم جديد فقط، ولا يمكن تعديل الأقسام أو حذفها. لن يُقبل القسم إذا كان مشابهاً لقسم موجود.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cloudinary Upload Box -->
+          <div style="background:var(--surface); border:1px dashed var(--border-dark); border-radius:var(--radius-sm); padding:20px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <label style="font-weight:700; font-size:13px;">صور السلعة (صورة واحدة على الأقل)</label>
+              <span id="upload-status" style="font-size:12px; color:var(--link); font-weight:600;"></span>
+            </div>
+
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+              <input type="file" id="prod-file-input" accept="image/*" class="input" style="flex:1;">
+              <button type="button" class="button btn-secondary btn-sm" id="btn-upload-file">
+                <i class="fa-solid fa-cloud-arrow-up"></i> رفع الصورة
+              </button>
+            </div>
+
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">أو أدخل رابط صورة مباشر:</div>
+            <div style="display:flex; gap:8px;">
+              <input type="url" id="prod-url-input" class="input" placeholder="https://images.unsplash.com/...">
+              <button type="button" class="button btn-secondary btn-sm" id="btn-add-url">إضافة الرابط</button>
+            </div>
+
+            <div class="upload-preview-grid" id="uploaded-images-preview"></div>
+          </div>
+
+          <button type="submit" id="btn-submit-product" class="button btn-accent btn-block" style="height:44px; font-size:15px;">
+            نشر السلعة في السوق الآن
+          </button>
+          <button type="button" id="btn-cancel-edit" class="button btn-secondary btn-block" style="margin-top:10px; display:none;" onclick="cancelEditProduct()">
+            إلغاء وضع التعديل
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- TAB 3: Seller Orders -->
+    <div class="seller-tab-pane" id="tab-orders">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="font-size:16px; font-weight:700;">طلبات العملاء الواردة إلى متجرك</h3>
+          <button class="button btn-secondary btn-sm" onclick="loadSellerOrders()">
+            <i class="fa-solid fa-rotate"></i> تحديث الطلبات
+          </button>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="invoice-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>رقم الطلب</th>
+                <th>التاريخ</th>
+                <th>السلع المطلوبة</th>
+                <th>بيانات المشتري والتسليم</th>
+                <th>الإجمالي</th>
+                <th>الحالة الحالية</th>
+                <th>تغيير الحالة</th>
+                <th>إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="seller-orders-table-body">
+              <tr>
+                <td colspan="8" style="text-align:center; padding:32px; color:var(--text-secondary);">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ تحميل طلبيات الزبائن...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: My Coupons (each coupon belongs to THIS seller's store only and is valid only for THIS seller's products) -->
+    <div class="seller-tab-pane" id="tab-coupons">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:24px; align-items:start;">
+
+        <!-- Add / Edit Coupon Form -->
+        <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:24px;">
+          <h3 id="coupon-form-title" style="font-size:17px; font-weight:800; margin-bottom:6px;">إنشاء كوبون خصم جديد</h3>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+            الكوبون يخص متجرك فقط، ويعمل مع منتجاتك أنت وحدها، ولا يمكن استخدامه مع منتجات أي بائع آخر.
+          </p>
+
+          <form id="form-coupon">
+            <div class="field">
+              <label for="coupon-name">رمز الكوبون</label>
+              <input type="text" id="coupon-name" class="input" maxlength="30" minlength="3" pattern="[A-Za-z0-9_\-]{3,30}" placeholder="مثال: USED20" style="text-transform:uppercase;" required>
+              <small style="font-size:11px; color:var(--text-secondary); display:block; margin-top:4px;">
+                من 3 إلى 30 حرفاً: حروف إنجليزية وأرقام و - و _ فقط. لا يفرّق بين الحروف الكبيرة والصغيرة.
+              </small>
+            </div>
+
+            <div class="field">
+              <label for="coupon-discount">نسبة الخصم (%)</label>
+              <input type="number" id="coupon-discount" class="input" min="1" max="100" step="0.01" placeholder="20" required>
+            </div>
+
+            <div class="field">
+              <label for="coupon-endtime">تاريخ ووقت انتهاء الصلاحية</label>
+              <input type="datetime-local" id="coupon-endtime" class="input" required>
+            </div>
+
+            <button type="submit" id="btn-submit-coupon" class="button btn-accent btn-block" style="height:40px; margin-top:8px;">
+              إنشاء الكوبون
+            </button>
+            <button type="button" id="btn-cancel-coupon-edit" class="button btn-secondary btn-block" style="margin-top:10px; display:none;" onclick="cancelEditCoupon()">
+              إلغاء وضع التعديل
+            </button>
+          </form>
+        </div>
+
+        <!-- My Coupons List -->
+        <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+          <div style="padding:14px 20px; border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:16px; font-weight:700;">كوبونات متجري</h3>
+            <button class="button btn-secondary btn-sm" onclick="loadSellerCoupons()">
+              <i class="fa-solid fa-rotate"></i> تحديث
+            </button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="invoice-table" style="margin:0;">
+              <thead>
+                <tr>
+                  <th>الرمز</th>
+                  <th>الخصم</th>
+                  <th>ينتهي في</th>
+                  <th>الحالة</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="seller-coupons-table-body">
+                <tr>
+                  <td colspan="5" style="text-align:center; padding:32px; color:var(--text-secondary);">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ تحميل كوبوناتك...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB 4: Problem Resolution Center (tickets sent by customers to THIS store only) -->
+    <div class="seller-tab-pane" id="tab-tickets">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <h3 style="font-size:16px; font-weight:700;">مشاكل العملاء المرسلة إلى متجرك</h3>
+          <button class="button btn-secondary btn-sm" onclick="loadSellerTickets()">
+            <i class="fa-solid fa-rotate"></i> تحديث
+          </button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="invoice-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>نوع المشكلة</th>
+                <th>رقم الطلب</th>
+                <th>العميل</th>
+                <th>التفاصيل</th>
+                <th>الصورة</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
+            <tbody id="seller-tickets-table-body">
+              <tr>
+                <td colspan="7" style="text-align:center; padding:32px; color:var(--text-secondary);">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ تحميل المشاكل...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/seo.js"></script>
+  <script>
+    let currentSeller = null;
+    let uploadedImageUrls = [];
+    let cloudinaryConfig = null;
+    let sellerProductsList = [];
+    let editingProductId = null;
+    // Stock the edit form was loaded with; sent as expected_quantity so the server
+    // can tell a stale stock field from an intentional stock change (LOGIC-02).
+    let editingProductExpectedQuantity = null;
+    let myStore = null; // the logged-in seller's own store (null until created)
+    let sellerCouponsList = [];
+    let editingCouponId = null;
+
+    // Tabs toggle
+    function activateTab(tabId) {
+      document.querySelectorAll('.seller-tab-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+      });
+      document.querySelectorAll('.seller-tab-pane').forEach(p => {
+        p.classList.toggle('active', p.id === tabId);
+      });
+    }
+
+    document.querySelectorAll('.seller-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => activateTab(btn.getAttribute('data-tab')));
+    });
+
+    async function initSellerDashboard() {
+      // 1. Guard check: only seller can access
+      currentSeller = await App.auth.requireAuth(['seller']);
+      if (!currentSeller) return;
+
+      // Header user setup
+      const namePart = currentSeller.name ? currentSeller.name.split(' ')[0] : 'عزيزنا';
+
+      await loadSectionsDropdown();
+      await fetchCloudinaryConfig();
+      await loadMyStore();
+      await loadSellerProducts();
+      await loadSellerOrders();
+      await loadSellerTickets();
+      await loadSellerCoupons();
+
+      // A seller without a store can't publish products yet - send them
+      // straight to the store form instead of a dead-end error later.
+      if (!myStore) activateTab('tab-store');
+    }
+
+    // --- Store Management (own store only; the server derives the owner
+    // from the auth cookie, so nothing about ownership is sent from here) ---
+    function fillStoreForm(store) {
+      document.getElementById('store-name').value = (store && store.store_name) || '';
+      document.getElementById('store-description').value = (store && store.store_description) || '';
+      document.getElementById('store-phone').value = (store && store.store_phone) || '';
+      document.getElementById('store-whatsapp').value = (store && store.store_whatsApp_number) || '';
+      document.getElementById('store-gps').value = (store && store.store_GPS) || '';
+
+      const hasStore = !!store;
+      document.getElementById('store-form-title').innerText = hasStore ? 'تعديل بيانات متجري' : 'أنشئ متجرك';
+      document.getElementById('store-form-hint').innerText = hasStore
+        ? 'هذه البيانات تظهر للمشترين. يمكنك تعديلها في أي وقت.'
+        : 'لم تنشئ متجرك بعد. أنشئ متجرك أولاً لتتمكن من إضافة سلع مكسبة وعرضها في السوق.';
+      document.getElementById('btn-save-store').innerText = hasStore ? 'حفظ التعديلات' : 'إنشاء المتجر';
+    }
+
+    async function loadMyStore() {
+      const res = await App.fetchAPI('/api/seller/store');
+      if (res.ok && res.data) {
+        myStore = res.data;
+      } else if (res.status === 404) {
+        myStore = null;
+      } else {
+        myStore = null;
+        App.showToast(res.message || 'تعذر تحميل بيانات المتجر', 'danger');
+      }
+      fillStoreForm(myStore);
+    }
+
+    document.getElementById('form-store').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const payload = {
+        store_name: document.getElementById('store-name').value.trim(),
+        store_description: document.getElementById('store-description').value.trim(),
+        store_phone: document.getElementById('store-phone').value.trim(),
+        store_whatsApp_number: document.getElementById('store-whatsapp').value.trim(),
+        store_GPS: document.getElementById('store-gps').value.trim(),
+      };
+
+      if (!payload.store_name) {
+        App.showToast('اسم المتجر مطلوب', 'danger');
+        return;
+      }
+
+      const isUpdate = !!myStore;
+      const btn = document.getElementById('btn-save-store');
+      btn.disabled = true;
+
+      const res = await App.fetchAPI('/api/seller/store', {
+        method: isUpdate ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      btn.disabled = false;
+
+      if (res.ok) {
+        myStore = res.data;
+        fillStoreForm(myStore);
+        App.showToast(isUpdate ? 'تم حفظ بيانات المتجر' : 'تم إنشاء متجرك بنجاح! يمكنك الآن إضافة سلعك.', 'success');
+        if (!isUpdate) activateTab('tab-add-product');
+      } else if (res.status === 409) {
+        // Store already exists (e.g. created in another tab) - reload it.
+        await loadMyStore();
+        App.showToast('لديك متجر بالفعل، تم تحميل بياناته', 'danger');
+      } else {
+        App.showToast(res.message || 'تعذر حفظ بيانات المتجر', 'danger');
+      }
+    });
+
+    async function fetchCloudinaryConfig() {
+      const res = await App.fetchAPI('/api/get_cloudinary_config');
+      if (res.ok && res.data) {
+        cloudinaryConfig = res.data;
+      }
+    }
+
+    async function loadSectionsDropdown() {
+      const res = await App.fetchAPI('/api/get_all_sections');
+      if (res.ok && Array.isArray(res.data)) {
+        const select = document.getElementById('add-prod-section');
+
+        select.innerHTML = '<option value="">اختر القسم المناسب</option>';
+        res.data.forEach(s => {
+          select.innerHTML += `<option value="${App.escapeHtml(s._id)}">${App.escapeHtml(s.name)}</option>`;
+
+        });
+      }
+    }
+
+    // --- Products Management ---
+    async function loadSellerProducts() {
+      const tbody = document.getElementById('seller-products-table-body');
+      const res = await App.fetchAPI('/api/get_seller_products?page=1&limit=50');
+
+      if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        sellerProductsList = res.data;
+        document.getElementById('count-seller-prods').innerText = res.data.length;
+
+        tbody.innerHTML = res.data.map(p => {
+          const img = (Array.isArray(p.images) && p.images[0]) ? p.images[0] : App.FALLBACK_IMG;
+          const finalPrice = p.final_price !== undefined ? p.final_price : p.price;
+          const sectionName = p.section?.name || 'عام';
+
+          return `
+            <tr>
+              <td>
+                <div style="width:48px; height:48px; border:1px solid var(--border); border-radius:4px; padding:2px; display:flex; align-items:center; justify-content:center;">
+                  <img src="${App.escapeHtml(img)}" alt="${App.escapeHtml(p.name)}" style="max-width:100%; max-height:100%; object-fit:contain;" onerror="App.imgFallback(this)">
+                </div>
+              </td>
+              <td>
+                <a href="/product.html?id=${App.escapeHtml(encodeURIComponent(p._id))}" target="_blank" style="font-weight:700; color:var(--link);">
+                  ${App.escapeHtml(p.name)}
+                </a>
+              </td>
+              <td>${App.escapeHtml(sectionName)}</td>
+              <td>${App.formatPrice(p.price)}</td>
+              <td>${p.discount > 0 ? `<span class="badge badge-discount">%${App.escapeHtml(p.discount)}</span>` : '-'}</td>
+              <td style="font-weight:800; color:var(--text-primary);">${App.formatPrice(finalPrice)}</td>
+              <td><span class="badge ${p.quantity > 0 ? 'badge-certified' : 'badge-neutral'}">${App.escapeHtml(p.quantity)} قطع</span></td>
+              <td>
+                <div style="display:flex; gap:6px;">
+                  <button class="button btn-secondary btn-sm" onclick="handleEditProduct(${App.escapeHtml(JSON.stringify(String(p._id)))})">
+                    <i class="fa-solid fa-pen"></i> تعديل
+                  </button>
+                  <button class="button btn-danger btn-sm" onclick="handleDeleteProduct(${App.escapeHtml(JSON.stringify(String(p._id)))})">
+                    <i class="fa-solid fa-trash"></i> حذف
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        sellerProductsList = [];
+        document.getElementById('count-seller-prods').innerText = '0';
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align:center; padding:32px; color:var(--text-secondary);">
+              لم تقم بإضافة أي سلع مكسبة في متجرك حتى الآن. اضغط على زر "إضافة سلعة مكسبة جديدة" للبدء.
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    async function handleDeleteProduct(productId) {
+      if (!confirm('هل أنت متأكد من رغبتك في حذف هذا المنتج نهائياً من المتجر؟')) return;
+
+      const res = await App.fetchAPI('/api/seller/delete_product', {
+        method: 'DELETE',
+        body: JSON.stringify({ product_id: productId }),
+      });
+
+      if (res.ok) {
+        App.showToast('تم حذف المنتج بنجاح', 'success');
+        loadSellerProducts();
+      } else {
+        App.showToast(res.message || 'تعذر حذف المنتج', 'danger');
+      }
+    }
+
+    function handleEditProduct(productId) {
+      const product = sellerProductsList.find(p => p._id === productId);
+      if (!product) {
+        App.showToast('تعذر العثور على بيانات هذا المنتج', 'danger');
+        return;
+      }
+
+      editingProductId = productId;
+      editingProductExpectedQuantity = Number.isInteger(product.quantity) && product.quantity >= 0 ? product.quantity : null;
+
+      document.getElementById('form-product-title').innerText = 'تعديل بيانات السلعة المعروضة';
+      document.getElementById('add-prod-name').value = product.name || '';
+      document.getElementById('add-prod-desc').value = product.description || '';
+      document.getElementById('add-prod-price').value = product.price || '';
+      document.getElementById('add-prod-discount').value = product.discount || 0;
+      document.getElementById('add-prod-qty').value = product.quantity || 1;
+      document.getElementById('add-prod-section').value = (product.section && product.section._id) || product.section || '';
+
+      uploadedImageUrls = Array.isArray(product.images) ? [...product.images] : [];
+      renderImagePreviews();
+
+      document.getElementById('btn-submit-product').innerText = 'حفظ التعديلات والتحديث';
+      document.getElementById('btn-cancel-edit').style.display = 'block';
+
+      document.querySelector('.seller-tab-btn[data-tab="tab-add-product"]').click();
+    }
+
+    function cancelEditProduct() {
+      editingProductId = null;
+      editingProductExpectedQuantity = null;
+      document.getElementById('form-product-title').innerText = 'إضافة سلعة مكسبة جديدة';
+      document.getElementById('form-add-product').reset();
+      uploadedImageUrls = [];
+      renderImagePreviews();
+      document.getElementById('btn-submit-product').innerText = 'نشر السلعة في السوق الآن';
+      document.getElementById('btn-cancel-edit').style.display = 'none';
+      document.querySelector('.seller-tab-btn[data-tab="tab-products"]').click();
+    }
+
+    // --- Image Upload Flow (Cloudinary Unsigned Upload) ---
+    document.getElementById('btn-upload-file').addEventListener('click', async () => {
+      const fileInput = document.getElementById('prod-file-input');
+      if (!fileInput.files || !fileInput.files[0]) {
+        App.showToast('يرجى اختيار ملف صورة أولاً', 'warning');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const statusEl = document.getElementById('upload-status');
+      statusEl.innerText = 'جارٍ رفع الصورة إلى السحابة...';
+
+      if (cloudinaryConfig && cloudinaryConfig.uploadUrl && cloudinaryConfig.uploadPreset) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', cloudinaryConfig.uploadPreset);
+
+          const cRes = await fetch(cloudinaryConfig.uploadUrl, {
+            method: 'POST',
+            body: formData,
+          });
+          const cData = await cRes.json();
+
+          if (cData.secure_url) {
+            addImagePreview(cData.secure_url);
+            statusEl.innerText = 'تم الرفع بنجاح!';
+            fileInput.value = '';
+            return;
+          }
+        } catch (err) {
+          console.error('Cloudinary upload error:', err);
+        }
+      }
+
+      statusEl.innerText = 'تم اعتماد الصورة';
+      const fallbackUrl = App.FALLBACK_IMG;
+      addImagePreview(fallbackUrl);
+      fileInput.value = '';
+    });
+
+    document.getElementById('btn-add-url').addEventListener('click', () => {
+      const urlInput = document.getElementById('prod-url-input');
+      const url = urlInput.value.trim();
+      if (!url) return;
+      addImagePreview(url);
+      urlInput.value = '';
+    });
+
+    function addImagePreview(url) {
+      uploadedImageUrls.push(url);
+      renderImagePreviews();
+    }
+
+    function removeUploadedImage(idx) {
+      uploadedImageUrls.splice(idx, 1);
+      renderImagePreviews();
+    }
+
+    function renderImagePreviews() {
+      const container = document.getElementById('uploaded-images-preview');
+      container.innerHTML = uploadedImageUrls.map((url, idx) => `
+        <div class="upload-thumb-item">
+          <img src="${App.escapeHtml(url)}" alt="معاينة الصورة">
+          <button type="button" class="upload-thumb-delete" onclick="removeUploadedImage(${idx})" title="حذف الصورة">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    // --- Product Submission ---
+    document.getElementById('form-add-product').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!uploadedImageUrls.length) {
+        App.showToast('يرجى رفع أو إضافة صورة واحدة على الأقل للمنتج', 'warning');
+        return;
+      }
+
+      const payload = {
+        product_name: document.getElementById('add-prod-name').value.trim(),
+        product_description: document.getElementById('add-prod-desc').value.trim(),
+        product_price: parseFloat(document.getElementById('add-prod-price').value),
+        product_discount: parseFloat(document.getElementById('add-prod-discount').value || '0'),
+        quantity: parseInt(document.getElementById('add-prod-qty').value, 10),
+        section: document.getElementById('add-prod-section').value,
+        images: uploadedImageUrls,
+      };
+
+      const isEditing = !!editingProductId;
+      if (isEditing) {
+        payload.product_id = editingProductId;
+        if (editingProductExpectedQuantity !== null) payload.expected_quantity = editingProductExpectedQuantity;
+      }
+
+      if (!isEditing && !myStore) {
+        App.showToast('أنشئ متجرك أولاً قبل إضافة السلع', 'danger');
+        activateTab('tab-store');
+        return;
+      }
+
+      const btn = document.getElementById('btn-submit-product');
+      btn.disabled = true;
+      btn.innerText = isEditing ? 'جارٍ حفظ التعديلات...' : 'جارٍ نشر المنتج...';
+
+      const res = await App.fetchAPI(
+        isEditing ? '/api/admin/update_product' : '/api/seller/add_product',
+        {
+          method: isEditing ? 'PUT' : 'POST',
+          body: JSON.stringify(payload),
+        }
+      );
+
+      btn.disabled = false;
+
+      if (res.ok) {
+        App.showToast(isEditing ? 'تم حفظ تعديلات السلعة بنجاح' : 'تم نشر السلعة في سوق المكسب بنجاح!', 'success');
+        cancelEditProduct();
+        loadSellerProducts();
+      } else {
+        btn.innerText = isEditing ? 'حفظ التعديلات والتحديث' : 'نشر السلعة في السوق الآن';
+        App.showToast(res.message || (isEditing ? 'تعذر حفظ التعديلات' : 'تعذر نشر السلعة'), 'danger');
+        // Stock changed under the form (409): refresh the list so re-opening the product starts from current stock.
+        if (isEditing && res.status === 409) loadSellerProducts();
+      }
+    });
+
+    // --- Seller Orders Management ---
+    async function loadSellerOrders() {
+      if (!currentSeller) return;
+      const tbody = document.getElementById('seller-orders-table-body');
+
+      // The server derives the seller from the auth cookie (req.user);
+      // no seller id is sent from the client.
+      const res = await App.fetchAPI('/api/seller/get_all_orders?page=1&limit=50');
+
+      if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        document.getElementById('count-seller-orders').innerText = res.data.length;
+
+        tbody.innerHTML = res.data.map(order => {
+          const orderId = order._id || order.id || 'N/A';
+          const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('ar-EG') : 'حديثاً';
+          const status = String(order.status || order.status_order || 'new').toLowerCase();
+          const products = order.products || [];
+          const customerName = order.user_name || 'غير معروف';
+          const phone = order.phone_number || '';
+          const whatsapp = order.whatsApp_number || '';
+          const gpsUrl = safeHref(order.GPS_URL);
+
+          return `
+            <tr>
+              <td style="font-weight:700;">#${App.escapeHtml(String(orderId).slice(-8).toUpperCase())}</td>
+              <td style="font-size:12px; color:var(--text-secondary);">${orderDate}</td>
+              <td>
+                <div style="font-size:13px; line-height:1.5;">
+                  ${products.map(p => `
+                    <div>• <strong>${App.escapeHtml(p.product?.name || p.name || 'سلعة')}</strong> (كمية: ${App.escapeHtml(p.quantity || 1)})</div>
+                  `).join('')}
+                </div>
+              </td>
+              <td>
+                <div style="font-size:13px; display:flex; flex-direction:column; gap:3px;">
+                  <strong>${App.escapeHtml(customerName)}</strong>
+                  ${phone ? `<a href="tel:${App.escapeHtml(phone)}" style="color:var(--text-secondary);"><i class="fa-solid fa-phone"></i> ${App.escapeHtml(phone)}</a>` : ''}
+                  ${whatsapp ? `<a href="https://wa.me/${App.escapeHtml(whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener" style="color:var(--success);"><i class="fa-brands fa-whatsapp"></i> مراسلة واتساب</a>` : ''}
+                  ${gpsUrl ? `<a href="${App.escapeHtml(gpsUrl)}" target="_blank" rel="noopener" style="color:var(--link);"><i class="fa-solid fa-location-dot"></i> موقع التسليم</a>` : ''}
+                </div>
+              </td>
+              <td style="font-weight:800; font-size:14px;">${App.formatPrice(order.total_price || 0)}</td>
+              <td>
+                <span class="status-badge ${App.escapeHtml(status)}">
+                  ${status === 'delivered' ? '<i class="fa-solid fa-circle-check"></i> تم التوصيل' : status === 'shipped' ? '<i class="fa-solid fa-truck"></i> قيد الشحن' : status === 'processing' ? '<i class="fa-solid fa-box-open"></i> قيد التجهيز' : status === 'cancelled' ? '<i class="fa-solid fa-ban"></i> ملغي' : '<i class="fa-solid fa-receipt"></i> جديد'}
+                </span>
+              </td>
+              <td>
+                <select class="input" style="height:32px; font-size:12px; padding:2px 8px; width:auto; cursor:pointer;" onchange="handleUpdateOrderStatus(${App.escapeHtml(JSON.stringify(String(orderId)))}, this.value)">
+                  <option value="new" ${status === 'new' ? 'selected' : ''}>new (جديد)</option>
+                  <option value="processing" ${status === 'processing' ? 'selected' : ''}>processing (تجهيز)</option>
+                  <option value="shipped" ${status === 'shipped' ? 'selected' : ''}>shipped (شحن)</option>
+                  <option value="delivered" ${status === 'delivered' ? 'selected' : ''}>delivered (تم التوصيل)</option>
+                  <option value="cancelled" ${status === 'cancelled' ? 'selected' : ''}>cancelled (إلغاء)</option>
+                </select>
+              </td>
+              <td>
+                <button class="button btn-danger btn-sm" onclick="handleDeleteSellerOrder(${App.escapeHtml(JSON.stringify(String(orderId)))})" title="حذف من سجل المتجر">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } else {
+        document.getElementById('count-seller-orders').innerText = '0';
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align:center; padding:32px; color:var(--text-secondary);">
+              لا توجد طلبيات شراء مسجلة لمنتجات متجرك حتى الآن.
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    async function handleUpdateOrderStatus(orderId, newStatus) {
+      const res = await App.fetchAPI('/api/seller/update_status_of_order', {
+        method: 'PUT',
+        body: JSON.stringify({
+          order_id: orderId,
+          status_order: newStatus,
+        }),
+      });
+
+      if (res.ok) {
+        App.showToast('تم تحديث حالة الطلب بنجاح وإشعار العميل', 'success');
+        loadSellerOrders();
+      } else {
+        App.showToast(res.message || 'تعذر تحديث حالة الطلب', 'danger');
+      }
+    }
+
+    async function handleDeleteSellerOrder(orderId) {
+      if (!confirm('هل أنت متأكد من رغبتك في حذف هذا الطلب من سجل متجرك؟')) return;
+
+      const res = await App.fetchAPI('/api/seller/delete_order', {
+        method: 'DELETE',
+        body: JSON.stringify({ order_id: orderId }),
+      });
+
+      if (res.ok) {
+        App.showToast('تم حذف الطلب بنجاح', 'success');
+        loadSellerOrders();
+      } else {
+        App.showToast(res.message || 'تعذر حذف الطلب', 'danger');
+      }
+    }
+
+
+    // --- Add a new category (sellers can add only; no edit / delete) ---
+    document.getElementById('toggle-new-section').addEventListener('click', (e) => {
+      e.preventDefault();
+      const box = document.getElementById('new-section-box');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.getElementById('btn-add-section').addEventListener('click', async () => {
+      const input = document.getElementById('new-section-name');
+      const msg = document.getElementById('new-section-msg');
+      const btn = document.getElementById('btn-add-section');
+      const name = input.value.trim();
+      msg.style.display = 'none';
+      if (!name) {
+        msg.textContent = 'يرجى كتابة اسم القسم';
+        msg.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      const res = await App.fetchAPI('/api/seller/add_section', {
+        method: 'POST',
+        body: JSON.stringify({ section_name: name }),
+      });
+      btn.disabled = false;
+
+      if (res.ok && res.data) {
+        App.showToast('تمت إضافة قسم "' + name + '" بنجاح', 'success');
+        input.value = '';
+        await loadSectionsDropdown();
+        document.getElementById('add-prod-section').value = res.data._id;
+        document.getElementById('new-section-box').style.display = 'none';
+      } else {
+        // e.g. "similar to an existing category" -> explain the problem
+        msg.textContent = res.message || 'تعذر إضافة القسم';
+        msg.style.display = 'block';
+        if (res.data && res.data.existing_section) {
+          document.getElementById('add-prod-section').value = res.data.existing_section._id;
+        }
+      }
+    });
+
+    // --- Problem Resolution Center (tickets) ---
+    const ISSUE_LABELS = {
+      damaged: 'منتج تالف أو غير مطابق للوصف',
+      delayed: 'تأخر الشحنة عن الموعد',
+      payment: 'تم الدفع ولم يتأكد الطلب',
+      return: 'طلب استرجاع أو استبدال',
+      incomplete: 'شحنة ناقصة',
+      other: 'مشكلة أخرى',
+    };
+    const TICKET_STATUS = { new: 'جديدة', in_progress: 'قيد المعالجة', resolved: 'تم الحل' };
+
+    function safeHref(url) {
+      return /^https?:\/\//i.test(url || '') ? url : '';
+    }
+
+    async function loadSellerTickets() {
+      const tbody = document.getElementById('seller-tickets-table-body');
+      const res = await App.fetchAPI('/api/seller/tickets?page=1&limit=100');
+      if (!res.ok || !Array.isArray(res.data)) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-secondary);">تعذر تحميل المشاكل</td></tr>';
+        return;
+      }
+      const openCount = res.data.filter(t => t.status !== 'resolved').length;
+      document.getElementById('count-seller-tickets').innerText = openCount;
+
+      if (!res.data.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-secondary);">لا توجد مشاكل مرسلة إلى متجرك حالياً.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = res.data.map(t => {
+        const wa = (t.whatsApp_number || '').replace(/[^0-9]/g, '');
+        const loc = safeHref(t.location_url);
+        const photo = safeHref(t.photo_url);
+        return `
+          <tr>
+            <td style="font-size:12px; white-space:nowrap;">${new Date(t.createdAt).toLocaleString('ar-EG')}</td>
+            <td style="font-weight:700;">${App.escapeHtml(ISSUE_LABELS[t.issue_type] || t.issue_type)}</td>
+            <td>${App.escapeHtml(t.order_number || '—')}</td>
+            <td style="font-size:12px; line-height:1.8;">
+              ${App.escapeHtml(t.customer_name || '')}<br>
+              <a href="tel:${App.escapeHtml(t.phone_number)}">${App.escapeHtml(t.phone_number)}</a>
+              ${wa ? `<br><a href="https://wa.me/${wa}" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> واتساب</a>` : ''}
+              ${loc ? `<br><a href="${App.escapeHtml(loc)}" target="_blank" rel="noopener"><i class="fa-solid fa-location-dot"></i> الموقع</a>` : ''}
+            </td>
+            <td style="max-width:280px; white-space:pre-line; font-size:13px;">${App.escapeHtml(t.details)}</td>
+            <td>${photo ? `<a href="${App.escapeHtml(photo)}" target="_blank" rel="noopener"><img src="${App.escapeHtml(photo)}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"></a>` : '—'}</td>
+            <td>
+              <select class="input" style="min-width:120px;" onchange="updateTicketStatus(${App.escapeHtml(JSON.stringify(String(t._id)))}, this.value)">
+                ${Object.keys(TICKET_STATUS).map(k => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${TICKET_STATUS[k]}</option>`).join('')}
+              </select>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function updateTicketStatus(id, status) {
+      const res = await App.fetchAPI('/api/seller/tickets/' + encodeURIComponent(id) + '/status', {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        App.showToast('تم تحديث حالة المشكلة', 'success');
+        loadSellerTickets();
+      } else {
+        App.showToast(res.message || 'تعذر تحديث الحالة', 'danger');
+      }
+    }
+
+    // --- My Coupons (own coupons only; the server derives the owner from
+    // the auth cookie - seller_id is never sent from here) ---
+    function isCouponExpired(c) {
+      return new Date(c.end_time).getTime() <= Date.now();
+    }
+
+    // <input type="datetime-local"> wants local time "YYYY-MM-DDTHH:mm".
+    function toLocalInputValue(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+
+    function setCouponEndMin() {
+      document.getElementById('coupon-endtime').min = toLocalInputValue(new Date().toISOString());
+    }
+
+    async function loadSellerCoupons() {
+      const tbody = document.getElementById('seller-coupons-table-body');
+      const res = await App.fetchAPI('/api/seller/coupons');
+
+      if (!res.ok || !Array.isArray(res.data)) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-secondary);">تعذر تحميل الكوبونات</td></tr>';
+        return;
+      }
+
+      sellerCouponsList = res.data;
+      document.getElementById('count-seller-coupons').innerText = sellerCouponsList.length;
+
+      if (!sellerCouponsList.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:32px; color:var(--text-secondary);">لم تنشئ أي كوبون بعد.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = sellerCouponsList.map(c => {
+        const expired = isCouponExpired(c);
+        return `
+          <tr>
+            <td style="font-weight:800;">
+              <i class="fa-solid fa-ticket" style="color:var(--accent-hover);"></i> ${App.escapeHtml(c.name)}
+            </td>
+            <td><span class="badge badge-discount">خصم %${App.escapeHtml(String(c.discount))}</span></td>
+            <td style="font-size:12px; white-space:nowrap;">
+              ${new Date(c.end_time).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+            </td>
+            <td style="font-weight:700; color:${expired ? 'var(--error)' : 'var(--success)'};">
+              ${expired ? 'منتهي' : 'ساري'}
+            </td>
+            <td style="white-space:nowrap;">
+              <button class="button btn-secondary btn-sm" onclick="handleEditCoupon(${App.escapeHtml(JSON.stringify(String(c._id)))})">
+                <i class="fa-solid fa-pen"></i> تعديل
+              </button>
+              <button class="button btn-secondary btn-sm" style="color:var(--error);" onclick="handleDeleteCoupon(${App.escapeHtml(JSON.stringify(String(c._id)))})">
+                <i class="fa-regular fa-trash-can"></i> حذف
+              </button>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    function resetCouponForm() {
+      editingCouponId = null;
+      document.getElementById('form-coupon').reset();
+      document.getElementById('coupon-form-title').innerText = 'إنشاء كوبون خصم جديد';
+      document.getElementById('btn-submit-coupon').innerText = 'إنشاء الكوبون';
+      document.getElementById('btn-cancel-coupon-edit').style.display = 'none';
+    }
+
+    function cancelEditCoupon() {
+      resetCouponForm();
+    }
+
+    function handleEditCoupon(couponId) {
+      const c = sellerCouponsList.find(x => String(x._id) === String(couponId));
+      if (!c) return;
+
+      editingCouponId = c._id;
+      setCouponEndMin();
+
+      document.getElementById('coupon-name').value = c.name;
+      document.getElementById('coupon-discount').value = c.discount;
+      // An expired coupon must be given a NEW future expiry, so leave it
+      // empty (the field is required) instead of pre-filling a past date.
+      document.getElementById('coupon-endtime').value = isCouponExpired(c) ? '' : toLocalInputValue(c.end_time);
+
+      document.getElementById('coupon-form-title').innerText = 'تعديل الكوبون';
+      document.getElementById('btn-submit-coupon').innerText = 'حفظ التعديلات';
+      document.getElementById('btn-cancel-coupon-edit').style.display = 'block';
+
+      document.getElementById('coupon-form-title').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function handleDeleteCoupon(couponId) {
+      if (!confirm('هل أنت متأكد من حذف هذا الكوبون نهائياً؟')) return;
+
+      const res = await App.fetchAPI('/api/seller/coupons/' + encodeURIComponent(couponId), {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        App.showToast('تم حذف الكوبون بنجاح', 'success');
+        if (String(editingCouponId) === String(couponId)) resetCouponForm();
+        loadSellerCoupons();
+      } else {
+        App.showToast(res.message || 'تعذر حذف الكوبون', 'danger');
+        // Already gone (e.g. deleted from another tab) - refresh the list.
+        if (res.status === 404) loadSellerCoupons();
+      }
+    }
+
+    document.getElementById('form-coupon').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById('coupon-name').value.trim().toUpperCase();
+      const discount = parseFloat(document.getElementById('coupon-discount').value);
+      const endTimeVal = document.getElementById('coupon-endtime').value;
+
+      if (!name) {
+        App.showToast('يرجى كتابة رمز الكوبون', 'warning');
+        return;
+      }
+      if (!Number.isFinite(discount) || discount <= 0 || discount > 100) {
+        App.showToast('نسبة الخصم يجب أن تكون أكبر من 0 وحتى 100', 'warning');
+        return;
+      }
+      if (!endTimeVal || Number.isNaN(new Date(endTimeVal).getTime())) {
+        App.showToast('يرجى تحديد موعد انتهاء صالح', 'warning');
+        return;
+      }
+
+      const isUpdate = !!editingCouponId;
+      const btn = document.getElementById('btn-submit-coupon');
+      btn.disabled = true;
+
+      const res = await App.fetchAPI(
+        isUpdate ? '/api/seller/coupons/' + encodeURIComponent(editingCouponId) : '/api/seller/coupons',
+        {
+          method: isUpdate ? 'PUT' : 'POST',
+          body: JSON.stringify({
+            coupon_name: name,
+            discount: discount,
+            end_time: new Date(endTimeVal).toISOString(),
+          }),
+        }
+      );
+
+      btn.disabled = false;
+
+      if (res.ok) {
+        App.showToast(isUpdate ? 'تم تعديل الكوبون بنجاح' : `تم إنشاء الكوبون "${name}" بنجاح`, 'success');
+        resetCouponForm();
+        loadSellerCoupons();
+      } else {
+        App.showToast(res.message || 'تعذر حفظ الكوبون', 'danger');
+        if (res.status === 404) {
+          // The coupon no longer exists - leave edit mode and refresh.
+          resetCouponForm();
+          loadSellerCoupons();
+        }
+      }
+    });
+
+    setCouponEndMin();
+
+    window.addEventListener('DOMContentLoaded', initSellerDashboard);
+  </script>
+</body>
+</html>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="تعرف على تفاصيل المنتج وصوره وسعره ومدى توفره في متجر مكسب.">
+  <meta property="og:site_name" content="متجر مكسب">
+  <meta property="og:title" content="تفاصيل المنتج | متجر مكسب">
+  <meta property="og:description" content="تعرف على تفاصيل المنتج وصوره وسعره ومدى توفره في متجر مكسب.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="تفاصيل المنتج | متجر مكسب">
+  <meta name="twitter:description" content="تعرف على تفاصيل المنتج وصوره وسعره ومدى توفره في متجر مكسب.">
+  <meta name="twitter:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <title>تفاصيل المنتج | متجر مكسب</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  </head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- Product View Main -->
+  <main class="container" style="padding-top: var(--space-12); padding-bottom: var(--space-48);">
+    <!-- Breadcrumbs -->
+    <nav id="product-breadcrumbs" aria-label="المسار">
+      <a href="/">الرئيسية</a>
+      <span>&rsaquo;</span>
+      <a href="/products.html">المنتجات المكسبة</a>
+      <span>&rsaquo;</span>
+      <span id="breadcrumb-section-name">القسم</span>
+      <span>&rsaquo;</span>
+      <span id="breadcrumb-product-name" style="color:var(--text-secondary);">جارٍ التحميل...</span>
+    </nav>
+
+    <!-- Main 3-Column PDP Container (Amazon Architecture) -->
+    <div id="product-detail-area">
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:48px; text-align:center;">
+        <i class="fa-solid fa-circle-notch fa-spin" style="font-size:32px; color:var(--accent);"></i>
+        <p style="margin-top:16px; color:var(--text-secondary);">جارٍ تحميل تفاصيل السلعة والمواصفات المعتمدة...</p>
+      </div>
+    </div>
+
+    <!-- Customer Reviews Section (Amazon Style) -->
+    <section class="reviews-section" id="reviews-section" style="margin-top: var(--space-24);">
+      <h2 style="font-size: 20px; font-weight: 800; margin-bottom: 20px; border-bottom: 1px solid var(--border-light); padding-bottom: 12px;">
+        تقييمات وآراء المشترين
+      </h2>
+      <div id="reviews-container">
+        <!-- Loaded via JS based on auth check -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/seo.js"></script>
+  <script>
+    let currentProduct = null;
+    let selectedRating = 5;
+
+    async function initProductPage() {
+      // 1. Auth check for header
+      const user = await App.auth.me();
+      if (user) {
+        const namePart = user.name ? user.name.split(' ')[0] : 'عزيزنا';
+      }
+
+      // 2. Sections
+      // 3. Load Product
+      await loadProduct();
+    }
+
+    async function loadProduct() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const productId = urlParams.get('id');
+
+      // Try sessionStorage first
+      const cached = sessionStorage.getItem('current_product');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (!productId || parsed._id === productId || parsed.id === productId) {
+            currentProduct = parsed;
+            renderProductDetails(currentProduct);
+            checkAndLoadReviews(currentProduct._id || currentProduct.id);
+            return;
+          }
+        } catch (_) {}
+      }
+
+      if (!productId) {
+        if (window.MaksabSEO) window.MaksabSEO.noindex();
+        document.getElementById('product-detail-area').innerHTML = `
+          <div class="empty-state-box">
+            <i class="fa-solid fa-circle-question empty-state-icon"></i>
+            <h2>لم يتم تحديد المنتج المطلوب</h2>
+            <p>يرجى اختيار منتج من كتالوج المنتجات المعروضة.</p>
+            <a href="/products.html" class="button btn-accent">العودة للكتالوج</a>
+          </div>
+        `;
+        return;
+      }
+
+      // Fallback: search via API
+      let page = 1;
+      let found = null;
+      while (page <= 6 && !found) {
+        const res = await App.fetchAPI(`/api/get_products?page=${page}&limit=50`);
+        if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+          found = res.data.find(p => p._id === productId);
+          if (found || !res.pagination?.hasNextPage) break;
+          page++;
+        } else {
+          break;
+        }
+      }
+
+      if (found) {
+        currentProduct = found;
+        sessionStorage.setItem('current_product', JSON.stringify(found));
+        renderProductDetails(currentProduct);
+        checkAndLoadReviews(currentProduct._id || currentProduct.id);
+      } else {
+        if (window.MaksabSEO) window.MaksabSEO.noindex();
+        document.getElementById('product-detail-area').innerHTML = `
+          <div class="empty-state-box">
+            <i class="fa-solid fa-box-open empty-state-icon"></i>
+            <h2>هذا المنتج غير متوفر أو تم حذفه</h2>
+            <p>ربما تم بيعه بالكامل من قبل البائع المعني.</p>
+            <a href="/products.html" class="button btn-accent">تصفح سلع أخرى</a>
+          </div>
+        `;
+      }
+    }
+
+    function renderProductDetails(p) {
+      const images = (Array.isArray(p.images) && p.images.length > 0)
+        ? p.images
+        : [App.FALLBACK_IMG];
+
+      const hasDiscount = p.discount > 0;
+      const finalPrice = p.final_price !== undefined ? p.final_price : p.price;
+      const sectionName = p.section?.name || 'عام';
+      const createdDate = p.createdAt ? new Date(p.createdAt).toLocaleDateString('ar-EG') : 'حديثاً';
+
+      document.title = `${p.name} | متجر مكسب`;
+      if (window.MaksabSEO) window.MaksabSEO.setProduct(p);
+      document.getElementById('breadcrumb-section-name').innerText = sectionName;
+      document.getElementById('breadcrumb-product-name').innerText = p.name;
+
+      const maxQtySelect = Math.min(Math.max(p.quantity || 1, 1), 10);
+      let qtyOptions = '';
+      for (let i = 1; i <= maxQtySelect; i++) {
+        qtyOptions += `<option value="${i}">${i}</option>`;
+      }
+
+      document.getElementById('product-detail-area').innerHTML = `
+        <div class="product-detail-layout">
+
+          <!-- Column 1: Gallery (Amazon Style) -->
+          <div class="product-gallery">
+            <div class="gallery-primary-box">
+              <img id="main-product-img" src="${App.escapeHtml(images[0])}" alt="${App.escapeHtml(p.name)}">
+            </div>
+            ${images.length > 1 ? `
+              <div class="gallery-thumbs-row">
+                ${images.map((img, idx) => `
+                  <div class="gallery-thumb ${idx === 0 ? 'is-active' : ''}" data-src="${App.escapeHtml(img)}" onclick="switchGalleryImage(this.dataset.src, this)">
+                    <img src="${App.escapeHtml(img)}" alt="صورة ${idx + 1}">
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Column 2: Specs & Description -->
+          <div class="product-info-col">
+            <h1 class="product-detail-title">${App.escapeHtml(p.name)}</h1>
+            <div class="product-brand-line">
+              القسم: <a href="/products.html?section=${encodeURIComponent(sectionName)}">${App.escapeHtml(sectionName)}</a>
+            </div>
+
+            <div class="product-detail-rating">
+              <span class="rating-count"><i class="fa-solid fa-circle-check" style="color:var(--success);"></i> تم فحص السلعة وتوثيقها من البائع</span>
+            </div>
+
+            <!-- Price Box -->
+            <div class="product-detail-price-box">
+              ${hasDiscount ? `<span class="badge badge-discount" style="font-size:13px; margin-bottom:8px;">خصم %${p.discount}</span><br>` : ''}
+              <span class="detail-price-big">${App.formatPrice(finalPrice)}</span>
+              ${hasDiscount ? `<span class="detail-price-old">${App.formatPrice(p.price)}</span>` : ''}
+              <div class="detail-vat-note">السعر المعروض هو السعر الصافي بدون رسوم خفية.</div>
+            </div>
+
+            <!-- Quality & Inspection Verification Box -->
+            <div class="inspection-box">
+              <h4><i class="fa-solid fa-shield-check"></i> تقرير المعاينة وحالة السلعة</h4>
+              <ul class="inspection-grid">
+                <li><i class="fa-solid fa-check"></i> السلعة مكسبة بحالة جيدة جداً</li>
+                <li><i class="fa-solid fa-check"></i> مطابقة للصور المعروضة %100</li>
+                <li><i class="fa-solid fa-check"></i> فحص عمل المنافذ والأزرار</li>
+                <li><i class="fa-solid fa-check"></i> إمكانية المعاينة قبل الاستلام</li>
+              </ul>
+            </div>
+
+            <!-- Description -->
+            <div style="margin-bottom: 24px;">
+              <h3 style="font-size:16px; font-weight:700; margin-bottom:8px;">حول هذه السلعة:</h3>
+              <p style="white-space: pre-line; color: var(--text-primary); line-height: 1.7; font-size: 14px;">
+                ${App.escapeHtml(p.description || 'لا يوجد وصف تفصيلي إضافي مضاف من قبل البائع لهذا المنتج.')}
+              </p>
+            </div>
+
+            <!-- Specs Table -->
+            <h3 style="font-size:15px; font-weight:700; margin-bottom:8px;">المواصفات الفنية وبيانات البائع:</h3>
+            <table class="specs-table">
+              <tbody>
+                <tr>
+                  <th>اسم البائع المعتمد</th>
+                  <td>${p.store_slug ? `<a href="/store/${encodeURIComponent(p.store_slug)}"><i class="fa-solid fa-store"></i> ${App.escapeHtml(p.seller_name || 'بائع موثوق')} — زيارة المتجر</a>` : App.escapeHtml(p.seller_name || 'بائع موثوق')}</td>
+                </tr>
+                <tr>
+                  <th>تاريخ الإدراج في السوق</th>
+                  <td>${createdDate}</td>
+                </tr>
+                <tr>
+                  <th>الكمية المعروضة</th>
+                  <td>${p.quantity} قطع متوفرة</td>
+                </tr>
+                ${p.seller_phone ? `
+                <tr>
+                  <th>هاتف البائع</th>
+                  <td><a href="tel:${App.escapeHtml(p.seller_phone)}">${App.escapeHtml(p.seller_phone)}</a></td>
+                </tr>` : ''}
+                ${p.seller_whatsapp ? `
+                <tr>
+                  <th>واتساب مباشر</th>
+                  <td><a href="https://wa.me/${App.escapeHtml(p.seller_whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener">تواصل عبر الواتساب <i class="fa-brands fa-whatsapp" style="color:var(--success);"></i></a></td>
+                </tr>` : ''}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Column 3: Amazon Buy Box -->
+          <aside class="product-buy-box">
+            <div class="buy-box-price">${App.formatPrice(finalPrice)}</div>
+            <div class="buy-box-delivery">
+              التوصيل: <strong>متاح ومباشر</strong> عبر التنسيق مع البائع أو الاستلام من الموقع.
+            </div>
+
+            <div class="buy-box-stock">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>${p.quantity > 0 ? `متوفر في المخزون (${p.quantity})` : 'نفدت الكمية حالياً'}</span>
+            </div>
+
+            <div class="buy-box-qty">
+              <label for="buy-box-quantity-select" style="font-size:12px; font-weight:700; display:block; margin-bottom:4px;">الكمية:</label>
+              <select id="buy-box-quantity-select" class="input" ${p.quantity <= 0 ? 'disabled' : ''}>
+                ${qtyOptions}
+              </select>
+            </div>
+
+            <div class="buy-box-actions">
+              <button class="button btn-accent btn-block" ${p.quantity <= 0 ? 'disabled' : ''} onclick="handleAddToCart()">
+                <i class="fa-solid fa-cart-shopping"></i> أضف إلى عربة التسوق
+              </button>
+              <button class="button btn-buynow btn-block" ${p.quantity <= 0 ? 'disabled' : ''} onclick="handleBuyNow()">
+                <i class="fa-solid fa-bolt"></i> اشترِ الآن مباشرة
+              </button>
+            </div>
+
+            <div class="buy-box-guarantees">
+              <span><i class="fa-solid fa-lock"></i> معاملة آمنة ومحمية</span>
+              <span><i class="fa-solid fa-truck"></i> تسليم سريع بموقع GPS</span>
+              <span><i class="fa-solid fa-arrow-rotate-left"></i> إمكانية الفحص عند الاستلام</span>
+            </div>
+          </aside>
+
+        </div>
+      `;
+    }
+
+    function switchGalleryImage(src, element) {
+      document.getElementById('main-product-img').src = src;
+      document.querySelectorAll('.gallery-thumb').forEach(el => el.classList.remove('is-active'));
+      element.classList.add('is-active');
+    }
+
+    function handleAddToCart() {
+      if (!currentProduct) return;
+      const qtySelect = document.getElementById('buy-box-quantity-select');
+      const qty = qtySelect ? parseInt(qtySelect.value, 10) : 1;
+      App.cart.add(currentProduct, qty);
+    }
+
+    function handleBuyNow() {
+      if (!currentProduct) return;
+      const qtySelect = document.getElementById('buy-box-quantity-select');
+      const qty = qtySelect ? parseInt(qtySelect.value, 10) : 1;
+      App.cart.add(currentProduct, qty);
+      window.location.href = '/cart.html';
+    }
+
+    // --- Reviews Logic with Amazon Style + Auth Check ---
+    async function checkAndLoadReviews(productId) {
+      const container = document.getElementById('reviews-container');
+      const user = await App.auth.me();
+
+      if (!user) {
+        container.innerHTML = `
+          <div class="empty-state-box" style="margin:0 auto;">
+            <i class="fa-solid fa-lock empty-state-icon"></i>
+            <h2>تقييمات ومراجعات المشترين متاحة للأعضاء</h2>
+            <p>سجّل دخولك بحسابك لتتمكن من قراءة جميع المراجعات وإضافة رأيك الخاص.</p>
+            <a href="/login.html?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}" class="button btn-accent">
+              تسجيل الدخول الآن
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <div style="text-align:center; padding:20px;">
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px; color:var(--accent);"></i>
+        </div>
+      `;
+
+      const res = await App.fetchAPI(`/api/get_product_reviews?product_id=${productId}`);
+      const reviews = (res.ok && Array.isArray(res.data)) ? res.data : [];
+
+      container.innerHTML = `
+        <div class="reviews-layout">
+          <!-- Overview -->
+          <div class="rating-overview">
+            <h3>آراء العملاء</h3>
+            ${(() => {
+              const n = reviews.length;
+              if (!n) return '<p style="font-size:13px; color:var(--text-secondary); margin-top:8px;">لا توجد تقييمات بعد. كن أول من يقيّم هذا المنتج.</p>';
+              const avg = reviews.reduce((t, r) => t + (Number(r.rating) || 5), 0) / n;
+              const stars = [1,2,3,4,5].map(i => `<i class="fa-solid fa-star" style="color:${i <= Math.round(avg) ? '#FFA41C' : '#CBD5E1'};"></i>`).join('');
+              const label = ['نجمة واحدة','نجمتان','3 نجوم','4 نجوم','5 نجوم'];
+              const bars = [5,4,3,2,1].map(k => {
+                const pct = Math.round(reviews.filter(r => (Number(r.rating) || 5) === k).length / n * 100);
+                return `<div class="rating-bar-row"><span>${label[k-1]}</span><div class="rating-bar-track"><div class="rating-bar-fill" style="width:${pct}%;"></div></div><span>${pct}%</span></div>`;
+              }).join('');
+              return `<div class="rating-score-big">${avg.toFixed(1)} من 5</div>
+                <div class="rating-stars" style="font-size:16px;">${stars}</div>
+                <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">استناداً إلى ${n} تقييم</p>
+                <div class="rating-bars-list">${bars}</div>`;
+            })()}
+          </div>
+
+          <!-- Reviews List & Add Form -->
+          <div class="reviews-list-col">
+            <div id="reviews-items-sublist">
+              ${reviews.length > 0 ? reviews.map(r => `
+                <div class="review-item">
+                  <div class="review-author">
+                    <i class="fa-solid fa-circle-user" style="font-size:22px; color:var(--text-muted);"></i>
+                    <span>${App.escapeHtml(r.user_name || 'مشتري معتمد')}</span>
+                  </div>
+                  <div class="review-badge-verified">
+                    <i class="fa-solid fa-check"></i> عملية شراء موثقة
+                  </div>
+                  <div class="rating-stars" style="margin-bottom:6px;">
+                    ${[1, 2, 3, 4, 5].map(s => `
+                      <i class="fa-solid fa-star" style="color: ${s <= (r.rating || 5) ? '#FFA41C' : '#CBD5E1'};"></i>
+                    `).join('')}
+                  </div>
+                  <div class="review-content">${App.escapeHtml(r.content || '')}</div>
+                  <div style="font-size:11px; color:var(--text-secondary); margin-top:6px;">
+                    تم التقييم في: ${r.created_at ? new Date(r.created_at).toLocaleDateString('ar-EG') : 'مؤخراً'}
+                  </div>
+                </div>
+              `).join('') : '<p style="color:var(--text-secondary); margin-bottom:24px;">لا توجد تقييمات مكتوبة لهذا المنتج بعد. كن أول من يكتب مراجعة موثوقة!</p>'}
+            </div>
+
+            <!-- Form -->
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px; margin-top:20px;">
+              <h4 style="font-size:15px; font-weight:700; margin-bottom:12px;">أضف تقييمك للسلعة وتجربتك مع البائع:</h4>
+              <form id="add-review-form" onsubmit="submitReview(event, '${productId}')">
+                <div class="field">
+                  <label>التقييم بالنجوم:</label>
+                  <div style="display:flex; gap:8px; font-size:24px; cursor:pointer;" id="star-picker">
+                    <i class="fa-solid fa-star star-opt" data-val="1" style="color:#FFA41C;"></i>
+                    <i class="fa-solid fa-star star-opt" data-val="2" style="color:#FFA41C;"></i>
+                    <i class="fa-solid fa-star star-opt" data-val="3" style="color:#FFA41C;"></i>
+                    <i class="fa-solid fa-star star-opt" data-val="4" style="color:#FFA41C;"></i>
+                    <i class="fa-solid fa-star star-opt" data-val="5" style="color:#FFA41C;"></i>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="review-content-input">رأيك بالتفصيل:</label>
+                  <textarea id="review-content-input" class="input" placeholder="وضح حالة المنتج المستلم، الالتزام بالوصف، وسرعة الرد والتسليم..." required></textarea>
+                </div>
+                <button type="submit" id="btn-submit-review" class="button btn-accent btn-sm">
+                  نشر التقييم الآن
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Init star click events
+      document.querySelectorAll('.star-opt').forEach(star => {
+        star.addEventListener('click', () => {
+          selectedRating = parseInt(star.getAttribute('data-val'), 10);
+          document.querySelectorAll('.star-opt').forEach(s => {
+            const val = parseInt(s.getAttribute('data-val'), 10);
+            s.style.color = val <= selectedRating ? '#FFA41C' : '#CBD5E1';
+          });
+        });
+      });
+    }
+
+    async function submitReview(e, productId) {
+      e.preventDefault();
+      const content = document.getElementById('review-content-input').value.trim();
+      if (!content) return;
+
+      const btn = document.getElementById('btn-submit-review');
+      btn.disabled = true;
+      btn.innerText = 'جارٍ الإرسال...';
+
+      const res = await App.fetchAPI('/api/post_review', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: productId,
+          review_text: content,
+          rating: selectedRating,
+        }),
+      });
+
+      btn.disabled = false;
+      btn.innerText = 'نشر التقييم الآن';
+
+      if (res.ok) {
+        App.showToast('تم نشر تقييمك بنجاح!', 'success');
+        checkAndLoadReviews(productId);
+      } else {
+        App.showToast(res.message || 'تعذر نشر التقييم', 'danger');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initProductPage);
+  </script>
+</body>
+</html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>حسابي والملف الشخصي | متجر مكسب</title>
+  <meta name="description" content="إدارة بيانات حسابك وعناوينك وإعداداتك في متجر مكسب.">
+  <meta property="og:site_name" content="متجر مكسب">
+  <meta property="og:title" content="حسابي والملف الشخصي | متجر مكسب">
+  <meta property="og:description" content="إدارة بيانات حسابك وعناوينك وإعداداتك في متجر مكسب.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="حسابي والملف الشخصي | متجر مكسب">
+  <meta name="twitter:description" content="إدارة بيانات حسابك وعناوينك وإعداداتك في متجر مكسب.">
+  <meta name="twitter:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  </head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- Profile Content -->
+  <main class="container" style="padding-top: var(--space-20); padding-bottom: var(--space-48);">
+    <div style="margin-bottom: 24px;">
+      <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 4px;">حسابك في سوق المكسب</h1>
+      <p style="color: var(--text-secondary); font-size: 14px; margin: 0;">
+        إدارة بياناتك الشخصية وعناوين التسليم وطلبات الانضمام كبائع معتمد.
+      </p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+
+      <!-- User Info Card (Amazon Style Panel) -->
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:24px;" id="user-info-card">
+        <div style="text-align:center; padding:20px;">
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px; color:var(--accent);"></i>
+        </div>
+      </div>
+
+      <!-- Action Card / Seller Promotion -->
+      <div style="background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:24px;" id="user-action-card">
+        <div style="text-align:center; padding:20px;">
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px; color:var(--accent);"></i>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/seo.js"></script>
+  <script>
+    async function initProfilePage() {
+      const user = await App.auth.requireAuth();
+      if (!user) return;
+
+      // 1. Header user details
+      const namePart = user.name ? user.name.split(' ')[0] : 'عزيزنا';
+
+
+      // 2. Sections
+      // 3. Render Profile
+      loadProfileData(user);
+    }
+
+    function loadProfileData(user) {
+      let roleLabel = 'مستخدم عادي (مشتري)';
+      let roleBadge = '<span class="badge badge-neutral"><i class="fa-solid fa-user"></i> مشتري</span>';
+      if (user.role === 'seller') {
+        roleLabel = 'بائع معتمد في المنصة';
+        roleBadge = '<span class="badge badge-certified"><i class="fa-solid fa-store"></i> بائع معتمد</span>';
+      } else if (user.role === 'super_admin') {
+        roleLabel = 'المدير العام للنظام (Super Admin)';
+        roleBadge = '<span class="badge badge-best-seller"><i class="fa-solid fa-shield-halved"></i> مدير النظام</span>';
+      }
+
+      // Render Info Panel
+      document.getElementById('user-info-card').innerHTML = `
+        <div style="display:flex; align-items:center; gap:16px; border-bottom:1px solid var(--border-light); padding-bottom:16px; margin-bottom:16px;">
+          <div style="width:60px; height:60px; border-radius:50%; background:var(--primary-subnav); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800;">
+            ${App.escapeHtml((user.name || 'U').charAt(0).toUpperCase())}
+          </div>
+          <div>
+            <h2 style="font-size:18px; font-weight:800; margin-bottom:4px;">${App.escapeHtml(user.name)}</h2>
+            ${roleBadge}
+          </div>
+        </div>
+
+        <table class="specs-table" style="margin-bottom:20px;">
+          <tbody>
+            <tr>
+              <th>البريد الإلكتروني</th>
+              <td><strong>${App.escapeHtml(user.email)}</strong></td>
+            </tr>
+            <tr>
+              <th>رقم الهاتف</th>
+              <td>${App.escapeHtml(user.phone_number || 'غير مسجل')}</td>
+            </tr>
+            <tr>
+              <th>رقم الواتساب</th>
+              <td>${App.escapeHtml(user.whatsApp_number || 'غير مسجل')}</td>
+            </tr>
+            <tr>
+              <th>موقع التسليم (GPS)</th>
+              <td style="word-break:break-all;">
+                ${user.GPS_URL ? `<a href="${App.escapeHtml(user.GPS_URL)}" target="_blank" rel="noopener"><i class="fa-solid fa-location-dot"></i> عرض على الخريطة</a>` : 'غير محدد'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a href="/orders.html" class="button btn-secondary btn-sm">
+            <i class="fa-solid fa-receipt"></i> سجل طلباتي
+          </a>
+          <button class="button btn-danger btn-sm" onclick="App.auth.logout()">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> تسجيل الخروج
+          </button>
+        </div>
+      `;
+
+      // Render Action Panel
+      const actionCard = document.getElementById('user-action-card');
+      if (user.role === 'user') {
+        actionCard.innerHTML = `
+          <h3 style="font-size:16px; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+            <i class="fa-solid fa-store" style="color:var(--accent-hover);"></i> انضم كبائع معتمد في سوق المكسب
+          </h3>
+          <p style="color:var(--text-secondary); font-size:13px; line-height:1.5; margin-bottom:16px;">
+            هل ترغب ببيع أجهزتك ومقتنياتك المكسبة للمشترين مباشرة؟ قدم طلب ترقية لمراجعته واعتماد متجرك.
+          </p>
+
+          <form id="form-promote-seller">
+            <div class="field">
+              <label for="promo-desc">وصف نوعية السلع التي ترغب ببيعها:</label>
+              <textarea id="promo-desc" class="input" placeholder="مثال: أجهزة لابتوب وهواتف مكسبة مفحوصة، إلكترونيات، مفروشات..." required></textarea>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div class="field">
+                <label for="promo-phone">رقم الاتصال التجاري:</label>
+                <input type="tel" id="promo-phone" class="input" value="${App.escapeHtml(user.phone_number || '')}" required>
+              </div>
+              <div class="field">
+                <label for="promo-whatsapp">رقم الواتساب للطلبات:</label>
+                <input type="tel" id="promo-whatsapp" class="input" value="${App.escapeHtml(user.whatsApp_number || '')}" required>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="promo-gps">موقع الاستلام أو المستودع (GPS):</label>
+              <input type="text" id="promo-gps" class="input" value="${App.escapeHtml(user.GPS_URL || '')}" required>
+            </div>
+
+            <button type="submit" id="btn-promo-submit" class="button btn-accent btn-block" style="margin-top:12px;">
+              إرسال طلب الترقية إلى بائع
+            </button>
+          </form>
+        `;
+
+        document.getElementById('form-promote-seller').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = document.getElementById('btn-promo-submit');
+          btn.disabled = true;
+          btn.innerText = 'جارٍ إرسال الطلب...';
+
+          const payload = {
+            name: user.name,
+            email: user.email,
+            description: document.getElementById('promo-desc').value.trim(),
+            phone_number: document.getElementById('promo-phone').value.trim(),
+            whatsApp_number: document.getElementById('promo-whatsapp').value.trim(),
+            GPS_URL: document.getElementById('promo-gps').value.trim(),
+          };
+
+          const res = await App.fetchAPI('/api/request_seller_promotion', {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          });
+
+          btn.disabled = false;
+          btn.innerText = 'إرسال طلب الترقية إلى بائع';
+
+          if (res.ok) {
+            App.showToast('تم إرسال طلب الترقية بنجاح إلى الإدارة!', 'success');
+            actionCard.innerHTML = `
+              <div style="text-align:center; padding:32px 16px;">
+                <div style="width:56px; height:56px; background:var(--success-bg); color:var(--success); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; margin:0 auto 16px;">
+                  <i class="fa-solid fa-check"></i>
+                </div>
+                <h3 style="font-size:17px; font-weight:800; margin-bottom:8px;">تم استلام طلب الترقية</h3>
+                <p style="color:var(--text-secondary); font-size:13px; line-height:1.6;">
+                  تم قيد طلبك في لوحة المدير العام للمراجعة. ستتمكن من إضافة المنتجات فور الاعتماد.
+                </p>
+              </div>
+            `;
+          } else {
+            App.showToast(res.message || 'تعذر إرسال الطلب', 'danger');
+          }
+        });
+      } else if (user.role === 'seller') {
+        actionCard.innerHTML = `
+          <div style="text-align:center; padding:20px 0;">
+            <div style="width:60px; height:60px; background:var(--success-bg); color:var(--success); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 16px;">
+              <i class="fa-solid fa-store"></i>
+            </div>
+            <h3 style="font-size:18px; font-weight:800; margin-bottom:8px;">أنت بائع معتمد في سوق المكسب</h3>
+            <p style="color:var(--text-secondary); font-size:14px; line-height:1.6; margin-bottom:20px;">
+              يمكنك الآن إدارة معروضاتك، رفع الصور، تحديث المخزون، ومتابعة طلبيات الزبائن وتغيير حالات الشحن والتوصيل.
+            </p>
+            <a href="/seller-dashboard.html" class="button btn-accent">
+              الدخول إلى لوحة إدارة متجر البائع &larr;
+            </a>
+          </div>
+        `;
+      } else if (user.role === 'super_admin') {
+        actionCard.innerHTML = `
+          <div style="text-align:center; padding:20px 0;">
+            <div style="width:60px; height:60px; background:var(--accent-light); color:var(--accent-hover); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 16px;">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h3 style="font-size:18px; font-weight:800; margin-bottom:8px;">المدير العام للنظام (Super Admin)</h3>
+            <p style="color:var(--text-secondary); font-size:14px; line-height:1.6; margin-bottom:20px;">
+              لديك صلاحيات التحكم الكاملة في الأقسام، اعتماد طلبات البائعين، وتعيين أدوار المستخدمين.
+            </p>
+            <a href="/admin-dashboard.html" class="button btn-dark">
+              الدخول إلى لوحة المدير العام &larr;
+            </a>
+          </div>
+        `;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initProfilePage);
+  </script>
+</body>
+</html>

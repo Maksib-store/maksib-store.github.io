@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="اكتشف المنتجات المعروضة في متاجر البائعين على متجر مكسب.">
+  <meta property="og:site_name" content="متجر مكسب">
+  <meta property="og:title" content="متجر البائع | متجر مكسب">
+  <meta property="og:description" content="اكتشف المنتجات المعروضة في متاجر البائعين على متجر مكسب.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="متجر البائع | متجر مكسب">
+  <meta name="twitter:description" content="اكتشف المنتجات المعروضة في متاجر البائعين على متجر مكسب.">
+  <meta name="twitter:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <title>متجر البائع | متجر مكسب</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  </head>
+<body>
+  <div data-site-header></div>
+  <main class="container" style="padding-top:var(--space-12);padding-bottom:var(--space-48)">
+    <div id="store-page-content" aria-live="polite"></div>
+  </main>
+  <div data-site-footer></div>
+  <script src="/js/app.js"></script>
+  <script src="/js/seo.js"></script>
+  <script>
+    function contactLink(type, value, label, icon) {
+      if (!value) return '';
+      const href = type === 'whatsapp' ? 'https://wa.me/' + value.replace(/[^0-9]/g, '') : type === 'location' ? value : 'tel:' + value;
+      const target = type === 'location' || type === 'whatsapp' ? ' target="_blank" rel="noopener"' : '';
+      return `<a class="button btn-secondary btn-sm" href="${App.escapeHtml(href)}"${target}><i class="fa-solid ${icon}"></i> ${label}</a>`;
+    }
+    function renderError(message) {
+      document.getElementById('store-page-content').innerHTML = `<div class="empty-state-box"><i class="fa-solid fa-store-slash empty-state-icon"></i><h1>المتجر غير متاح</h1><p>${App.escapeHtml(message)}</p><a href="/products.html" class="button btn-accent">تصفح المنتجات</a></div>`;
+    }
+    async function loadStore(page) {
+      const slug = window.location.pathname.split('/').filter(Boolean)[1] || '';
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return renderError('رابط المتجر غير صحيح.');
+      const res = await App.fetchAPI(`/api/stores/${encodeURIComponent(slug)}?page=${page || 1}&limit=12`);
+      if (!res.ok || !res.data) return renderError(res.status === 404 ? 'هذا المتجر غير موجود أو لم يعد متاحاً.' : res.message);
+      const data = res.data, s = data.store, products = data.products || [];
+      document.title = `${s.name} | متجر مكسب`;
+      if (window.MaksabSEO) window.MaksabSEO.refresh();
+      const rating = s.rating === null ? 'لا توجد تقييمات بعد' : `${s.rating} <i class="fa-solid fa-star" style="color:#FFA41C"></i> (${s.review_count})`;
+      document.getElementById('store-page-content').innerHTML = `
+        <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:clamp(20px,4vw,36px);margin-bottom:var(--space-24)">
+          <div style="display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+            <div><h1 style="font-size:28px;font-weight:800;margin-bottom:8px">${App.escapeHtml(s.name)}</h1>
+              <p style="white-space:pre-line;color:var(--text-secondary);line-height:1.7;max-width:780px">${App.escapeHtml(s.description || 'لا يوجد وصف مضاف لهذا المتجر بعد.')}</p></div>
+            <span class="badge ${s.verification_status === 'verified' ? 'badge-certified' : 'badge-neutral'}"><i class="fa-solid fa-circle-check"></i> ${s.verification_status === 'verified' ? 'بائع موثّق' : 'بائع'}</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px"><span style="font-weight:700">${rating}</span>${contactLink('phone', s.phone, 'اتصال', 'fa-phone')}${contactLink('whatsapp', s.whatsapp, 'واتساب', 'fa-comment')}${contactLink('location', s.location, 'الموقع', 'fa-location-dot')}<a class="button btn-accent btn-sm" href="/store/${encodeURIComponent(s.slug)}/help"><i class="fa-solid fa-headset"></i> مركز حل المشاكل</a></div>
+        </section>
+        <section><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px"><h2 style="font-size:22px;font-weight:800">منتجات المتجر</h2><span style="color:var(--text-secondary)">${res.pagination.totalProducts} منتج متاح</span></div>
+          <div class="product-grid">${products.length ? products.map(App.productCard).join('') : '<div class="empty-state-box" style="grid-column:1/-1"><i class="fa-solid fa-box-open empty-state-icon"></i><h2>لا توجد منتجات متاحة حالياً</h2></div>'}</div>
+          ${res.pagination.totalPages > 1 ? `<div style="display:flex;justify-content:center;gap:10px;margin-top:24px"><button class="button btn-secondary btn-sm" ${!res.pagination.hasPreviousPage ? 'disabled' : ''} onclick="loadStore(${res.pagination.page - 1})">السابق</button><span style="padding:8px">${res.pagination.page} / ${res.pagination.totalPages}</span><button class="button btn-secondary btn-sm" ${!res.pagination.hasNextPage ? 'disabled' : ''} onclick="loadStore(${res.pagination.page + 1})">التالي</button></div>` : ''}
+        </section>`;
+    }
+    window.addEventListener('DOMContentLoaded', () => loadStore(1));
+  </script>
+</body>
+</html>

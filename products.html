@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تسوق المنتجات | متجر مكسب</title>
+  <meta name="description" content="تصفح المنتجات المعروضة في متجر مكسب، واستخدم تصفية الأقسام والأسعار لاكتشاف السلع والعروض المتاحة بسهولة.">
+  <meta property="og:site_name" content="متجر مكسب">
+  <meta property="og:title" content="تسوق المنتجات | متجر مكسب">
+  <meta property="og:description" content="تصفح المنتجات المعروضة في متجر مكسب، واستخدم تصفية الأقسام والأسعار لاكتشاف السلع والعروض المتاحة بسهولة.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ar_EG">
+  <meta property="og:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="تسوق المنتجات | متجر مكسب">
+  <meta name="twitter:description" content="تصفح المنتجات المعروضة في متجر مكسب، واستخدم تصفية الأقسام والأسعار لاكتشاف السلع والعروض المتاحة بسهولة.">
+  <meta name="twitter:image" content="https://YOUR-DOMAIN.com/img/hero/slide-1.webp">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  </head>
+<body>
+
+  <div data-site-header></div>
+
+  <!-- Catalog Page Content -->
+  <main class="container" style="padding-bottom: var(--space-48);">
+    <div class="catalog-layout">
+
+      <!-- Left / Right Filter Sidebar (Amazon Style) -->
+      <aside class="catalog-sidebar" id="catalog-sidebar">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="font-size:16px; font-weight:800;">الفلاتر والتصفية</h3>
+          <button class="button btn-secondary btn-sm" onclick="clearAllFilters()" style="height:28px; font-size:12px; padding:0 8px;">
+            مسح الكل
+          </button>
+        </div>
+
+        <!-- Section Filter Group -->
+        <div class="sidebar-filter-group">
+          <div class="sidebar-filter-title">القسم / الفئة</div>
+          <ul class="filter-list" id="sidebar-sections-list">
+            <li>
+              <label class="filter-item-label">
+                <input type="radio" name="filter-section" value="" checked onchange="handleSectionFilter('')">
+                <span>جميع الأقسام</span>
+              </label>
+            </li>
+            <!-- Dynamic sections inserted via JS -->
+          </ul>
+        </div>
+
+        <!-- Price Range Filter Group -->
+        <div class="sidebar-filter-group">
+          <div class="sidebar-filter-title">نطاق السعر (ج.م)</div>
+          <div class="filter-price-range">
+            <input type="number" id="filter-min-price" class="input" placeholder="من" min="0">
+            <span>-</span>
+            <input type="number" id="filter-max-price" class="input" placeholder="إلى" min="0">
+            <button type="button" class="button btn-secondary" onclick="applyPriceFilter()">انتقال</button>
+          </div>
+        </div>
+
+        <!-- Offers / Discounts Filter Group -->
+        <div class="sidebar-filter-group">
+          <div class="sidebar-filter-title">العروض والخصومات</div>
+          <ul class="filter-list">
+            <li>
+              <label class="filter-item-label">
+                <input type="checkbox" id="filter-discount-only" onchange="applyFiltersAndRender()">
+                <span>السلع ذات الخصم فقط</span>
+              </label>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Condition Verification -->
+        <div class="sidebar-filter-group">
+          <div class="sidebar-filter-title">حالة السلعة</div>
+          <ul class="filter-list">
+            <li>
+              <label class="filter-item-label">
+                <input type="checkbox" checked disabled>
+                <span>مكسب مفحوص ومعتمد</span>
+              </label>
+            </li>
+          </ul>
+        </div>
+      </aside>
+
+      <!-- Main Products Catalog -->
+      <div class="catalog-main-content">
+        <h1 class="catalog-seo-title">تسوق المنتجات في متجر مكسب</h1>
+        <!-- Catalog Top Action Bar -->
+        <div class="catalog-top-bar">
+          <div class="results-summary" id="results-count-summary">
+            جارٍ تحميل المنتجات...
+          </div>
+
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button class="button btn-secondary btn-sm mobile-filter-trigger" onclick="toggleMobileFilters()">
+              <i class="fa-solid fa-sliders"></i> الفلاتر
+            </button>
+
+            <div class="catalog-sort-wrap">
+              <label for="catalog-sort-select">الترتيب حسب:</label>
+              <select id="catalog-sort-select" onchange="applyFiltersAndRender()">
+                <option value="newest">الأحدث وصولاً</option>
+                <option value="price_asc">السعر: من الأقل للأعلى</option>
+                <option value="price_desc">السعر: من الأعلى للأقل</option>
+                <option value="discount_desc">أكبر نسبة خصم</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Filter Chips -->
+        <div class="filter-chips-bar" id="active-filter-chips"></div>
+
+        <!-- Products Grid -->
+        <div class="product-grid" id="products-grid">
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+          <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+        </div>
+
+        <!-- Pagination -->
+        <div id="pagination-container" style="display:flex; justify-content:center; align-items:center; gap:8px; margin-top:32px;"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <div data-site-footer></div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/seo.js"></script>
+  <script>
+    let currentPage = 1;
+    const limit = 15;
+    let totalPages = 1;
+    let fetchedProducts = [];
+    let currentSectionFilter = '';
+    let searchQuery = '';
+    let minPriceFilter = null;
+    let maxPriceFilter = null;
+
+    // Parse URL queries on load
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('section')) currentSectionFilter = urlParams.get('section');
+    if (urlParams.get('search')) searchQuery = urlParams.get('search');
+
+    function toggleMobileFilters() {
+      const sidebar = document.getElementById('catalog-sidebar');
+      sidebar.classList.toggle('is-open');
+    }
+
+    async function loadAuthAndSections() {
+      // 2. Sections
+      const secRes = await App.fetchAPI('/api/get_all_sections');
+      if (secRes.ok && Array.isArray(secRes.data)) {
+        const sidebarSecList = document.getElementById('sidebar-sections-list');
+
+        secRes.data.forEach(sec => {
+          // Sidebar radio
+          const isChecked = (sec.name === currentSectionFilter);
+          sidebarSecList.innerHTML += `
+            <li>
+              <label class="filter-item-label">
+                <input type="radio" name="filter-section" value="${App.escapeHtml(sec.name)}" ${isChecked ? 'checked' : ''} onchange="handleSectionFilter(this.value)">
+                <span>${App.escapeHtml(sec.name)}</span>
+              </label>
+            </li>
+          `;
+        });
+      }
+    }
+
+    function handleSectionFilter(sectionName) {
+      currentSectionFilter = sectionName;
+      if (document.getElementById('catalog-sidebar').classList.contains('is-open')) {
+        toggleMobileFilters();
+      }
+      applyFiltersAndRender();
+    }
+
+    function applyPriceFilter() {
+      const min = document.getElementById('filter-min-price').value;
+      const max = document.getElementById('filter-max-price').value;
+      minPriceFilter = min !== '' ? parseFloat(min) : null;
+      maxPriceFilter = max !== '' ? parseFloat(max) : null;
+      if (document.getElementById('catalog-sidebar').classList.contains('is-open')) {
+        toggleMobileFilters();
+      }
+      applyFiltersAndRender();
+    }
+
+    function clearAllFilters() {
+      currentSectionFilter = '';
+      searchQuery = '';
+      minPriceFilter = null;
+      maxPriceFilter = null;
+      document.getElementById('filter-min-price').value = '';
+      document.getElementById('filter-max-price').value = '';
+      document.getElementById('filter-discount-only').checked = false;
+      document.getElementById('header-search-input').value = '';
+      const defaultRadio = document.querySelector('input[name="filter-section"][value=""]');
+      if (defaultRadio) defaultRadio.checked = true;
+      applyFiltersAndRender();
+    }
+
+    async function fetchProducts(page = 1) {
+      currentPage = page;
+      const grid = document.getElementById('products-grid');
+      grid.innerHTML = `
+        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div><div class="skeleton-text price"></div></div>
+      `;
+
+      const res = await App.fetchAPI(`/api/get_products?page=${page}&limit=${limit}`);
+      if (res.ok && Array.isArray(res.data)) {
+        fetchedProducts = res.data;
+        totalPages = res.pagination ? (res.pagination.totalPages || 1) : 1;
+        applyFiltersAndRender();
+        renderPagination();
+      } else {
+        grid.innerHTML = `
+          <div class="empty-state-box" style="grid-column: 1 / -1;">
+            <i class="fa-solid fa-triangle-exclamation empty-state-icon"></i>
+            <h2>تعذر تحميل المنتجات</h2>
+            <p>${App.escapeHtml(res.message || 'حدث خطأ أثناء الاتصال بالخادم')}</p>
+            <button class="button btn-accent" onclick="fetchProducts(${page})">إعادة المحاولة</button>
+          </div>
+        `;
+      }
+    }
+
+    function applyFiltersAndRender() {
+      let list = [...fetchedProducts];
+
+      // 1. Section Filter
+      if (currentSectionFilter) {
+        list = list.filter(p => p.section && (p.section.name === currentSectionFilter || p.section === currentSectionFilter));
+      }
+
+      // 2. Search Query Filter
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(p =>
+          (p.name && p.name.toLowerCase().includes(q)) ||
+          (p.description && p.description.toLowerCase().includes(q))
+        );
+      }
+
+      // 3. Price Filter
+      if (minPriceFilter !== null) {
+        list = list.filter(p => (p.final_price !== undefined ? p.final_price : p.price) >= minPriceFilter);
+      }
+      if (maxPriceFilter !== null) {
+        list = list.filter(p => (p.final_price !== undefined ? p.final_price : p.price) <= maxPriceFilter);
+      }
+
+      // 4. Discount only
+      const discountOnly = document.getElementById('filter-discount-only').checked;
+      if (discountOnly) {
+        list = list.filter(p => p.discount > 0);
+      }
+
+      // 5. Sorting
+      const sortBy = document.getElementById('catalog-sort-select').value;
+      if (sortBy === 'price_asc') {
+        list.sort((a, b) => (a.final_price || a.price) - (b.final_price || b.price));
+      } else if (sortBy === 'price_desc') {
+        list.sort((a, b) => (b.final_price || b.price) - (a.final_price || a.price));
+      } else if (sortBy === 'discount_desc') {
+        list.sort((a, b) => (b.discount || 0) - (a.discount || 0));
+      }
+
+      renderChips();
+      renderProductsGrid(list);
+    }
+
+    function renderChips() {
+      const bar = document.getElementById('active-filter-chips');
+      let chips = [];
+
+      if (currentSectionFilter) {
+        chips.push(`
+          <span class="filter-chip">
+            القسم: ${App.escapeHtml(currentSectionFilter)}
+            <i class="fa-solid fa-xmark filter-chip-remove" onclick="handleSectionFilter('')"></i>
+          </span>
+        `);
+      }
+      if (searchQuery) {
+        chips.push(`
+          <span class="filter-chip">
+            بحث: "${App.escapeHtml(searchQuery)}"
+            <i class="fa-solid fa-xmark filter-chip-remove" onclick="searchQuery=''; applyFiltersAndRender();"></i>
+          </span>
+        `);
+      }
+      if (minPriceFilter !== null || maxPriceFilter !== null) {
+        chips.push(`
+          <span class="filter-chip">
+            السعر: ${minPriceFilter || 0} - ${maxPriceFilter || '∞'} ج.م
+            <i class="fa-solid fa-xmark filter-chip-remove" onclick="minPriceFilter=null; maxPriceFilter=null; document.getElementById('filter-min-price').value=''; document.getElementById('filter-max-price').value=''; applyFiltersAndRender();"></i>
+          </span>
+        `);
+      }
+
+      bar.innerHTML = chips.join('');
+    }
+
+    function renderProductsGrid(products) {
+      const grid = document.getElementById('products-grid');
+      const countEl = document.getElementById('results-count-summary');
+      countEl.innerHTML = `تم العثور على <strong>${products.length}</strong> منتج مكسب`;
+
+      if (!products.length) {
+        grid.innerHTML = `
+          <div class="empty-state-box" style="grid-column: 1 / -1;">
+            <i class="fa-solid fa-magnifying-glass empty-state-icon"></i>
+            <h2>لا توجد نتائج مطابقة</h2>
+            <p>جرّب تعديل معايير التصفية أو اختيار قسم مختلف.</p>
+            <button class="button btn-secondary" onclick="clearAllFilters()">إعادة تعيين كافة الفلاتر</button>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = products.map(App.productCard).join('');
+    }
+
+    function renderPagination() {
+      const container = document.getElementById('pagination-container');
+      if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = `
+        <button class="button btn-secondary btn-sm" ${currentPage <= 1 ? 'disabled' : ''} onclick="fetchProducts(${currentPage - 1})">
+          <i class="fa-solid fa-chevron-right"></i> السابق
+        </button>
+        <span style="font-weight:700; font-size:14px; padding:0 12px;">صفحة ${currentPage} من ${totalPages}</span>
+        <button class="button btn-secondary btn-sm" ${currentPage >= totalPages ? 'disabled' : ''} onclick="fetchProducts(${currentPage + 1})">
+          التالي <i class="fa-solid fa-chevron-left"></i>
+        </button>
+      `;
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      if (searchQuery) {
+        document.getElementById('header-search-input').value = searchQuery;
+      }
+      await loadAuthAndSections();
+      await fetchProducts(1);
+    });
+  </script>
+</body>
+</html>
