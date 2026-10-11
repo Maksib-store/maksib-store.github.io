@@ -1,0 +1,9 @@
+ضع الأسطر التالية داخل <head> في صفحات الموقع العامة:
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+ارفع الملفات الأربعة (favicon.svg, favicon.ico, favicon-32x32.png, apple-touch-icon.png) إلى جذر مستودع GitHub Pages بجوار index.html.
+لا تضع صورة JPEG داخل ملف اسمه .svg؛ يجب أن تكون الصيغة ومحتوى الملف متطابقين.
