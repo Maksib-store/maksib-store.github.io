@@ -5281,3 +5281,47 @@ h1, h2, h3, p, td, th, a { overflow-wrap: anywhere; }
   #ai-chat-btn .ai-trigger-text { display: none !important; }
   #ai-chat-btn .ai-trigger-icon { width: 44px; height: 44px; }
 }
+
+/* ==========================================================================
+   COMPACT PRODUCT CARD ON PHONES
+   ========================================================================== */
+@media (max-width: 767px) {
+  .product-grid, .grid { gap: 10px; }
+  .product-card { padding: 10px; border-radius: 16px; }
+  .product-card:hover { transform: none; }
+  .card-top-badges { min-height: 20px; margin-bottom: 6px; }
+  .product-image-wrap {
+    aspect-ratio: 1 / 0.8;
+    padding: 6px;
+    margin-bottom: 6px;
+    border-radius: 12px;
+  }
+  .product-card-category { font-size: 10px; margin-bottom: 2px; }
+  .product-card h3, .product-card .product-title {
+    font-size: 13px;
+    line-height: 1.4;
+    height: 36px;
+    margin-bottom: 4px;
+  }
+  .product-card .card-condition { font-size: 11px; margin-bottom: 4px; }
+  .card-price-box { margin-bottom: 6px; }
+  .price-main { font-size: 17px; }
+  .price-old { font-size: 11px; margin-inline-start: 4px; }
+  .card-shipping { font-size: 11px; margin-bottom: 4px; }
+  .card-add-btn { height: 34px; font-size: 13px; padding: 0 8px; }
+
+  /* A lone product: center it instead of leaving half the row empty */
+  .product-grid > .product-card:only-child {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 250px;
+    justify-self: center;
+  }
+}
+
+@media (max-width: 360px) {
+  .product-card { padding: 8px; }
+  .price-main { font-size: 15px; }
+  .card-add-btn { font-size: 12px; }
+  .card-add-btn i { display: none; }
+}
